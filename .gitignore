@@ -1,0 +1,6 @@
+.venv/
+data/
+__pycache__/
+tmp/
+dev.log
+tmp/gemini/

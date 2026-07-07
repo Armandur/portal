@@ -1,0 +1,75 @@
+# Portal - kodbasbeskrivning för Claude
+
+Tjänsteportal för den delade dev-VM:en ubuntu-ai. Sanningskällan för vilka
+portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
+
+## Stack
+
+- Python 3.12, FastAPI, uvicorn. Beroenden hanteras med uv (`uv sync`).
+- Rå sqlite3 (inte SQLAlchemy - litet lokalt verktyg). DB i `data/portal.db`.
+- Jinja2 för serverrenderad dokumentationsvy, python-markdown
+  (extensions: fenced_code, tables) för rendering.
+- Frontend: vanilla JS + HTML + CSS utan bundler. Ljust/mörkt läge via
+  prefers-color-scheme.
+- Ingen auth (internt verktyg på privat nät). Inga IP-loggar.
+
+## Filstruktur
+
+- `app/main.py` - app-instans, lifespan (init_db, liggarimport,
+  självregistrering, liggarskrivning), router-registrering. Swagger på
+  /api/docs (inte /docs - den sökvägen används av dokumentationsvyn).
+- `app/config.py` - sökvägar, portar, TTL. Allt överridbart via env
+  (se .env.example).
+- `app/database.py` - schema, init_db() med ALTER TABLE-guard-mönster
+  (`_ensure_column`), CRUD för services och reservations.
+- `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
+  statusbedömning, reservationsstädning.
+- `app/ledger.py` - genererar och importerar
+  `~/.claude/running-services.md`.
+- `app/routes/api.py` - JSON-API (/api/...).
+- `app/routes/pages.py` - kortvyn (/) och dokumentationsvyn (/docs/{name}).
+- `app/templates/` - index.html (klientrenderad via fetch), docs.html.
+- `app/static/` - style.css, utils.js (apiFetch, escapeHtml), app.js.
+- `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv).
+- `deploy/portal.service` - systemd user unit (primär driftväg).
+- `install.sh` - uv sync + unit-installation + svc-symlink. Idempotent.
+- `Dockerfile` - reservspår, kräver --network host --pid host.
+
+## Designbeslut
+
+- **Portalen är master för liggaren.** `~/.claude/running-services.md`
+  skrivs om från DB efter varje mutation (create/update/delete) och vid
+  appstart. Vid appstart importeras först rader vars port inte finns i DB
+  (gamla manuella flöden tappas inte); DB vinner vid konflikt.
+- **Reservations-TTL 15 minuter.** Reservationer äldre än TTL ignoreras och
+  städas vid nästa läsning. Registrering på en reserverad port tar bort
+  reservationen.
+- **Statuslogik** (`app/ports.py:service_status`): "up" om porten lyssnar
+  och registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
+  matchar; "conflict" om porten lyssnar med annan känd PID; "down" annars.
+- **Länkar alltid till http://ubuntu-ai:PORT** (config.SERVICE_HOST),
+  aldrig localhost - användaren når VM:en via hostnamn/Tailscale.
+- Portalen registrerar sig själv vid start (name "portal", pid
+  os.getpid(), docs_path pekar på README.md).
+
+## Vanliga förändringar
+
+- Ny kolumn i services: lägg till i `_SCHEMA` OCH som
+  `_ensure_column`-anrop i `init_db()` (guard-mönstret är migreringen).
+  Uppdatera även `allowed` i `update_service`, Pydantic-modellerna i
+  api.py och ev. CLI-flaggor.
+- Nytt API-endpoint: `app/routes/api.py`, prefix /api.
+- Ändring i liggarformatet: `_HEADER` och `write_ledger()` i
+  `app/ledger.py`; tänk på att `import_ledger()` måste kunna parsa
+  formatet (regexen `_ROW_RE`).
+
+## Verifiering
+
+```bash
+cd /home/rasmus/workspace/portal
+uv run python -c "from app.main import app; print('OK')"
+```
+
+Live-test: starta med `.venv/bin/uvicorn app.main:app --host 0.0.0.0
+--port 8890` (logga till dev.log), curl:a /api/health, stoppa exakt den
+PID du startade. Kom ihåg att appstart skriver om liggarfilen.

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ service.name }} - dokumentation</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <h1>{{ service.name }}</h1>
+      <p class="subtitle">
+        {{ service.project }} - port {{ service.port }} -
+        <a href="{{ service_url }}">{{ service_url }}</a>
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <p><a href="/" class="backlink">Tillbaka till portalen</a></p>
+
+    {% if error %}
+      <div class="notice error">{{ error }}</div>
+    {% endif %}
+
+    {% if content_html %}
+      <article class="docs-content">
+        {{ content_html | safe }}
+      </article>
+    {% elif not error %}
+      <p class="muted">Ingen dokumentation registrerad för denna tjänst.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,51 @@
+"""Webbsidor: kortvyn (klientrenderad) och dokumentationsvyn (serverrenderad)."""
+
+from pathlib import Path
+
+import markdown
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from app import database as db
+from app.config import BASE_DIR, SERVICE_HOST
+
+router = APIRouter()
+templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
+
+
+def _render_markdown(text: str) -> str:
+    return markdown.markdown(text, extensions=["fenced_code", "tables"])
+
+
+@router.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    return templates.TemplateResponse(request, "index.html", {})
+
+
+@router.get("/docs/{name}", response_class=HTMLResponse)
+def service_docs(request: Request, name: str):
+    svc = db.get_service(name)
+    if svc is None:
+        raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
+
+    error = None
+    content_html = None
+    if svc.get("docs_path"):
+        path = Path(svc["docs_path"])
+        try:
+            content_html = _render_markdown(path.read_text(encoding="utf-8"))
+        except OSError:
+            error = (
+                f"Dokumentationsfilen kunde inte läsas: {path}. "
+                "Kontrollera att sökvägen finns och är läsbar."
+            )
+    if content_html is None and error is None and svc.get("docs_md"):
+        content_html = _render_markdown(svc["docs_md"])
+
+    return templates.TemplateResponse(request, "docs.html", {
+        "service": svc,
+        "content_html": content_html,
+        "error": error,
+        "service_url": f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}",
+    })

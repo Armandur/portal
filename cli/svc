@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""svc - CLI mot portalens HTTP-API (http://ubuntu-ai:8890).
+
+Använder bara stdlib så den fungerar utan venv. Bas-URL styrs av
+miljövariabeln PORTAL_URL (default http://127.0.0.1:8890).
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+BASE_URL = os.environ.get("PORTAL_URL", "http://127.0.0.1:8890").rstrip("/")
+
+
+def _request(method, path, body=None):
+    url = BASE_URL + path
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url, data=data, method=method,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read().decode("utf-8")).get("detail", str(e))
+        except (ValueError, AttributeError):
+            detail = str(e)
+        if isinstance(detail, list):
+            detail = "; ".join(
+                d.get("msg", str(d)) if isinstance(d, dict) else str(d) for d in detail
+            )
+        print(f"Fel: {detail}", file=sys.stderr)
+        sys.exit(1)
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        print(
+            f"Portalen svarar inte på {BASE_URL}.\n"
+            "Kontrollera att den kör, t.ex.: systemctl --user start portal\n"
+            "eller manuellt: cd ~/workspace/portal && "
+            ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8890",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _print_table(rows, headers):
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+    fmt = "  ".join(f"{{:<{w}}}" for w in widths)
+    print(fmt.format(*headers))
+    print(fmt.format(*("-" * w for w in widths)))
+    for row in rows:
+        print(fmt.format(*(str(c) for c in row)))
+
+
+def cmd_list(_args):
+    services = _request("GET", "/api/services")
+    if not services:
+        print("Inga tjänster registrerade.")
+        return
+    rows = [
+        (s["name"], s["project"], s["port"], s["status"], s["url"])
+        for s in services
+    ]
+    _print_table(rows, ["NAMN", "PROJEKT", "PORT", "STATUS", "URL"])
+
+
+def cmd_port(args):
+    body = {}
+    if args.range:
+        try:
+            start, end = args.range.split("-", 1)
+            body["range_start"] = int(start)
+            body["range_end"] = int(end)
+        except ValueError:
+            print("Fel: ange intervall som START-SLUT, t.ex. 8000-8999.", file=sys.stderr)
+            sys.exit(1)
+    if args.note:
+        body["note"] = args.note
+    result = _request("POST", "/api/ports/reserve", body)
+    print(result["port"])
+
+
+def _service_body(args):
+    body = {}
+    if getattr(args, "port", None) is not None:
+        body["port"] = args.port
+    if getattr(args, "project", None) is not None:
+        body["project"] = args.project
+    if args.pid is not None:
+        body["pid"] = args.pid
+    if args.desc is not None:
+        body["description"] = args.desc
+    if getattr(args, "path", None) is not None:
+        body["url_path"] = args.path
+    if args.docs_file is not None:
+        body["docs_path"] = os.path.abspath(args.docs_file)
+    if args.docs_md is not None:
+        body["docs_md"] = args.docs_md
+    if getattr(args, "by", None) is not None:
+        body["started_by"] = args.by
+    return body
+
+
+def cmd_register(args):
+    body = {"name": args.name, **_service_body(args)}
+    svc = _request("POST", "/api/services", body)
+    print(f"Registrerad: {svc['name']} på port {svc['port']} ({svc['url']})")
+
+
+def cmd_unregister(args):
+    _request("DELETE", f"/api/services/{args.name}")
+    print(f"Avregistrerad: {args.name}")
+
+
+def cmd_show(args):
+    svc = _request("GET", f"/api/services/{args.name}")
+    print(json.dumps(svc, indent=2, ensure_ascii=False))
+
+
+def cmd_update(args):
+    body = _service_body(args)
+    if not body:
+        print("Fel: inga fält att uppdatera angivna.", file=sys.stderr)
+        sys.exit(1)
+    svc = _request("PATCH", f"/api/services/{args.name}", body)
+    print(f"Uppdaterad: {svc['name']}")
+
+
+def cmd_ports(_args):
+    data = _request("GET", "/api/ports")
+    rows = []
+    for p in data["listening"]:
+        pids = ", ".join(str(x) for x in p["pids"]) or "?"
+        procs = ", ".join(p["processes"]) or "?"
+        registered = p["service"] if p["registered"] else "NEJ"
+        rows.append((p["port"], pids, procs, registered))
+    _print_table(rows, ["PORT", "PID", "PROCESS", "REGISTRERAD"])
+
+
+def _add_common_fields(p):
+    p.add_argument("--pid", type=int, help="PID för processen")
+    p.add_argument("--desc", help="Beskrivning av tjänsten")
+    p.add_argument("--docs-file", help="Absolut sökväg till markdown-dokumentation")
+    p.add_argument("--docs-md", help="Inline-dokumentation som markdown")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="svc",
+        description="CLI mot tjänsteportalen på den delade dev-VM:en.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("list", help="Lista tjänster med status")
+    p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("port", help="Hämta och reservera en ledig port")
+    p.add_argument("--range", help="Portintervall, t.ex. 8000-8999")
+    p.add_argument("--note", help="Notering på reservationen")
+    p.set_defaults(func=cmd_port)
+
+    p = sub.add_parser("register", help="Registrera en tjänst")
+    p.add_argument("name", help="Tjänstens namn (slug: a-z, 0-9, bindestreck)")
+    p.add_argument("--port", type=int, required=True, help="Port tjänsten lyssnar på")
+    p.add_argument("--project", required=True, help="Projektnamn")
+    p.add_argument("--path", default="/", help="URL-sökväg (default /)")
+    p.add_argument("--by", help="Vem som startade, t.ex. 'claude, projekt X'")
+    _add_common_fields(p)
+    p.set_defaults(func=cmd_register)
+
+    p = sub.add_parser("unregister", help="Avregistrera en tjänst")
+    p.add_argument("name")
+    p.set_defaults(func=cmd_unregister)
+
+    p = sub.add_parser("show", help="Visa en tjänst som JSON")
+    p.add_argument("name")
+    p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("update", help="Uppdatera fält på en tjänst")
+    p.add_argument("name")
+    _add_common_fields(p)
+    p.set_defaults(func=cmd_update)
+
+    p = sub.add_parser("ports", help="Lista lyssnande portar inkl. oregistrerade")
+    p.set_defaults(func=cmd_ports)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

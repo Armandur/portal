@@ -1,0 +1,200 @@
+/* Portal - grundstil med stöd för ljust och mörkt läge */
+
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1c2330;
+  --muted: #66707f;
+  --border: #dde1e7;
+  --accent: #2563eb;
+  --accent-soft: #eaf0fe;
+  --up: #15803d;
+  --up-bg: #dcf3e4;
+  --down: #b91c1c;
+  --down-bg: #fde5e5;
+  --conflict: #b45309;
+  --conflict-bg: #fdeed3;
+  --code-bg: #eef1f5;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161d;
+    --surface: #1b212b;
+    --text: #e6e9ee;
+    --muted: #94a0b0;
+    --border: #2c3542;
+    --accent: #6d9bf5;
+    --accent-soft: #1f2a40;
+    --up: #4ade80;
+    --up-bg: #14301f;
+    --down: #f87171;
+    --down-bg: #3a1c1c;
+    --conflict: #fbbf24;
+    --conflict-bg: #382a12;
+    --code-bg: #232b37;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 1.25rem 0;
+  margin-bottom: 1.5rem;
+}
+
+.topbar h1 { margin: 0; font-size: 1.5rem; }
+.subtitle { margin: 0.25rem 0 0; color: var(--muted); }
+
+h2 { font-size: 1.15rem; margin: 1.75rem 0 0.75rem; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.muted { color: var(--muted); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.backlink { font-weight: 500; }
+
+/* Kort */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.card-head h3 { margin: 0; font-size: 1.05rem; }
+
+.card .project { color: var(--muted); font-size: 0.85rem; }
+.card .desc { margin: 0.1rem 0 0.3rem; font-size: 0.92rem; }
+
+.card-links {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  margin-top: auto;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge.up { color: var(--up); background: var(--up-bg); }
+.badge.down { color: var(--down); background: var(--down-bg); }
+.badge.conflict { color: var(--conflict); background: var(--conflict-bg); }
+
+/* Tabeller (oregistrerade portar, docs) */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.92rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th { background: var(--accent-soft); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+
+/* Kod och docs-innehåll */
+
+code, pre {
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.88em;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+}
+
+pre code { background: none; padding: 0; }
+
+.docs-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: var(--shadow);
+}
+
+.docs-content h1:first-child { margin-top: 0; }
+.docs-content img { max-width: 100%; }
+
+.notice {
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+
+.notice.error {
+  color: var(--down);
+  background: var(--down-bg);
+  border: 1px solid var(--down);
+}
+
+footer { margin: 2.5rem 0 1.5rem; font-size: 0.85rem; }
