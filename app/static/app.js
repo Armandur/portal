@@ -5,28 +5,67 @@ const STATUS_LABELS = {
   up: "Uppe",
   down: "Nere",
   conflict: "Konflikt",
+  mixed: "Delvis uppe",
 };
 
-function renderServiceCard(svc) {
-  const status = STATUS_LABELS[svc.status] || svc.status;
+function statusBadge(status) {
+  const label = STATUS_LABELS[status] || status;
+  return `<span class="badge ${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+}
+
+function aggregateStatus(services) {
+  if (services.some((s) => s.status === "conflict")) return "conflict";
+  if (services.every((s) => s.status === "up")) return "up";
+  if (services.every((s) => s.status === "down")) return "down";
+  return "mixed";
+}
+
+// Grupperar tjänster per projekt (bevarar portordningen från API:t)
+function groupByProject(services) {
+  const groups = new Map();
+  for (const svc of services) {
+    if (!groups.has(svc.project)) groups.set(svc.project, []);
+    groups.get(svc.project).push(svc);
+  }
+  return [...groups.values()];
+}
+
+function renderServiceRow(svc, showLabel) {
   const docsLink = svc.has_docs
     ? `<a href="/docs/${encodeURIComponent(svc.name)}">Dokumentation</a>`
     : "";
-  const desc = svc.description
-    ? `<p class="desc">${escapeHtml(svc.description)}</p>`
-    : "";
+  const label = svc.description || svc.name;
+  const head = showLabel
+    ? `<div class="svc-row-head">
+         <span class="svc-label">${escapeHtml(label)}</span>
+         ${statusBadge(svc.status)}
+       </div>`
+    : svc.description
+      ? `<p class="desc">${escapeHtml(svc.description)}</p>`
+      : "";
   return `
-    <div class="card">
-      <div class="card-head">
-        <h3>${escapeHtml(svc.name)}</h3>
-        <span class="badge ${escapeHtml(svc.status)}">${escapeHtml(status)}</span>
-      </div>
-      <span class="project">${escapeHtml(svc.project)} - port ${svc.port}</span>
-      ${desc}
+    <div class="svc-row">
+      ${head}
       <div class="card-links">
         <a href="${escapeHtml(svc.url)}">${escapeHtml(svc.url)}</a>
         ${docsLink}
       </div>
+    </div>`;
+}
+
+function renderProjectCard(services) {
+  const multi = services.length > 1;
+  const headStatus = multi ? aggregateStatus(services) : services[0].status;
+  const rows = services.map((svc) => renderServiceRow(svc, multi)).join("");
+  const ports = services.map((s) => s.port).join(", ");
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3>${escapeHtml(services[0].project)}</h3>
+        ${statusBadge(headStatus)}
+      </div>
+      <span class="project">port ${escapeHtml(ports)}</span>
+      ${rows}
     </div>`;
 }
 
@@ -62,7 +101,7 @@ async function refresh() {
       apiFetch("/api/ports"),
     ]);
     servicesEl.innerHTML = services.length
-      ? services.map(renderServiceCard).join("")
+      ? groupByProject(services).map(renderProjectCard).join("")
       : '<p class="muted">Inga tjänster registrerade ännu.</p>';
     unregisteredEl.innerHTML = renderUnregistered(ports);
     infoEl.textContent =
