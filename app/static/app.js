@@ -6,6 +6,7 @@ const STATUS_LABELS = {
   down: "Nere",
   conflict: "Konflikt",
   mixed: "Delvis uppe",
+  docs: "Docs",
 };
 
 function statusBadge(status) {
@@ -14,9 +15,12 @@ function statusBadge(status) {
 }
 
 function aggregateStatus(services) {
-  if (services.some((s) => s.status === "conflict")) return "conflict";
-  if (services.every((s) => s.status === "up")) return "up";
-  if (services.every((s) => s.status === "down")) return "down";
+  // Dokumentationsposter (utan port) räknas inte in i upp/nere-bedömningen
+  const live = services.filter((s) => s.status !== "docs");
+  if (live.length === 0) return "docs";
+  if (live.some((s) => s.status === "conflict")) return "conflict";
+  if (live.every((s) => s.status === "up")) return "up";
+  if (live.every((s) => s.status === "down")) return "down";
   return "mixed";
 }
 
@@ -31,7 +35,10 @@ function groupByProject(services) {
 }
 
 function renderServiceRow(svc, showLabel) {
-  const docsLink = svc.has_docs
+  // För portlösa poster pekar huvudlänken redan på dokumentationssidan -
+  // ingen separat docs-länk behövs då.
+  const isDocsOnly = svc.port == null;
+  const docsLink = svc.has_docs && !isDocsOnly
     ? `<a href="/docs/${encodeURIComponent(svc.name)}">Dokumentation</a>`
     : "";
   const label = svc.description || svc.name;
@@ -57,14 +64,20 @@ function renderProjectCard(services) {
   const multi = services.length > 1;
   const headStatus = multi ? aggregateStatus(services) : services[0].status;
   const rows = services.map((svc) => renderServiceRow(svc, multi)).join("");
-  const ports = services.map((s) => s.port).join(", ");
+  const ports = services
+    .filter((s) => s.port != null)
+    .map((s) => s.port)
+    .join(", ");
+  const portLine = ports
+    ? `<span class="project">port ${escapeHtml(ports)}</span>`
+    : "";
   return `
     <div class="card">
       <div class="card-head">
         <h3>${escapeHtml(services[0].project)}</h3>
         ${statusBadge(headStatus)}
       </div>
-      <span class="project">port ${escapeHtml(ports)}</span>
+      ${portLine}
       ${rows}
     </div>`;
 }

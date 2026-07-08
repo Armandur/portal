@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import database as db
-from app.config import PORT_RANGE_END, PORT_RANGE_START, SERVICE_HOST
+from app.config import PORT_RANGE_END, PORT_RANGE_START, PORTAL_PORT, SERVICE_HOST
 from app.ledger import write_ledger
 from app.ports import find_free_port, scan_listening_ports, service_status
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api")
 class ServiceIn(BaseModel):
     name: str
     project: str
-    port: int
+    port: int | None = None
     pid: int | None = None
     description: str | None = None
     url_path: str = "/"
@@ -45,7 +45,11 @@ class ReserveIn(BaseModel):
 def _with_status(svc: dict, listening: dict) -> dict:
     out = dict(svc)
     out["status"] = service_status(svc, listening)
-    out["url"] = f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}"
+    if svc.get("port") is None:
+        # Portlös dokumentationspost: länka till dokumentationssidan
+        out["url"] = f"http://{SERVICE_HOST}:{PORTAL_PORT}/docs/{svc['name']}"
+    else:
+        out["url"] = f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}"
     out["has_docs"] = bool(svc.get("docs_path") or svc.get("docs_md"))
     return out
 
@@ -80,14 +84,24 @@ def create_service(body: ServiceIn):
         raise HTTPException(
             400, "Ogiltigt namn: använd bara små bokstäver a-z, siffror och bindestreck."
         )
-    _validate_port(body.port)
+    if body.port is None:
+        if not (body.docs_path or body.docs_md):
+            raise HTTPException(
+                400,
+                "Registrering utan port kräver dokumentation: "
+                "ange docs_path eller docs_md.",
+            )
+    else:
+        _validate_port(body.port)
     if db.get_service(body.name) is not None:
         raise HTTPException(409, f"Namnet '{body.name}' är redan registrerat.")
-    existing = db.get_service_by_port(body.port)
-    if existing is not None:
-        raise HTTPException(
-            409, f"Port {body.port} är redan registrerad av tjänsten '{existing['name']}'."
-        )
+    if body.port is not None:
+        existing = db.get_service_by_port(body.port)
+        if existing is not None:
+            raise HTTPException(
+                409,
+                f"Port {body.port} är redan registrerad av tjänsten '{existing['name']}'.",
+            )
     try:
         svc = db.create_service(body.model_dump())
     except sqlite3.IntegrityError:

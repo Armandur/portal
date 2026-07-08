@@ -44,9 +44,24 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - **Reservations-TTL 15 minuter.** Reservationer äldre än TTL ignoreras och
   städas vid nästa läsning. Registrering på en reserverad port tar bort
   reservationen.
-- **Statuslogik** (`app/ports.py:service_status`): "up" om porten lyssnar
-  och registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
+- **Statuslogik** (`app/ports.py:service_status`): "docs" om posten saknar
+  port (ren dokumentationspost); annars "up" om porten lyssnar och
+  registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
   matchar; "conflict" om porten lyssnar med annan känd PID; "down" annars.
+- **Dokumentationsposter (port NULL).** En registrering utan port är en
+  ren dokumentationspost och kräver docs_path eller docs_md (valideras i
+  POST /api/services). Portkolumnen tillåter NULL men behåller UNIQUE
+  (SQLite tillåter flera NULL i UNIQUE-kolumn). API:ts url-fält pekar för
+  portlösa poster på /docs/{name} på portalen själv. Posten uppgraderas
+  senare med PATCH (eller `svc update NAMN --port N --pid P`) när tjänsten
+  startas. I liggaren skrivs portlösa poster med "-" i portkolumnen;
+  import_ledger hoppar över sådana rader (regexen kräver siffror).
+  Migreringen till nullable port sker i `_migrate_port_nullable()` i
+  database.py (tabell-rebuild, idempotent - SQLite kan inte droppa
+  NOT NULL med ALTER TABLE).
+- **HTML-dokumentation.** Slutar docs_path på .html/.htm serverar
+  GET /docs/{name} filens innehåll rakt av som text/html (fristående sida,
+  inte inbäddad i docs-templaten). Övriga docs_path renderas som markdown.
 - **Länkar alltid till http://ubuntu-ai:PORT** (config.SERVICE_HOST),
   aldrig localhost - användaren når VM:en via hostnamn/Tailscale.
 - Portalen registrerar sig själv vid start (name "portal", pid
@@ -58,6 +73,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   `_ensure_column`-anrop i `init_db()` (guard-mönstret är migreringen).
   Uppdatera även `allowed` i `update_service`, Pydantic-modellerna i
   api.py och ev. CLI-flaggor.
+- Ändring av kolumnconstraints (NOT NULL o.l.): kan inte göras med
+  ALTER TABLE i SQLite - följ rebuild-mönstret i `_migrate_port_nullable()`
+  (rename, ny tabell från `_SCHEMA`, kopiera gemensamma kolumner, droppa
+  gamla) och gör kontrollen idempotent via `PRAGMA table_info`.
 - Nytt API-endpoint: `app/routes/api.py`, prefix /api.
 - Ändring i liggarformatet: `_HEADER` och `write_ledger()` i
   `app/ledger.py`; tänk på att `import_ledger()` måste kunna parsa

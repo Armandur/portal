@@ -34,18 +34,28 @@ def service_docs(request: Request, name: str):
     if svc.get("docs_path"):
         path = Path(svc["docs_path"])
         try:
-            content_html = _render_markdown(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
         except OSError:
             error = (
                 f"Dokumentationsfilen kunde inte läsas: {path}. "
                 "Kontrollera att sökvägen finns och är läsbar."
             )
+        else:
+            if path.suffix.lower() in (".html", ".htm"):
+                # HTML-dokumentation serveras som fristående sida, inte i templaten
+                return HTMLResponse(text)
+            content_html = _render_markdown(text)
     if content_html is None and error is None and svc.get("docs_md"):
         content_html = _render_markdown(svc["docs_md"])
 
+    service_url = (
+        f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}"
+        if svc.get("port") is not None
+        else None
+    )
     return templates.TemplateResponse(request, "docs.html", {
         "service": svc,
         "content_html": content_html,
         "error": error,
-        "service_url": f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}",
+        "service_url": service_url,
     })

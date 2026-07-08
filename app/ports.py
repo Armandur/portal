@@ -103,9 +103,12 @@ def find_free_port(
 
 
 def service_status(service: dict, listening: dict[int, dict]) -> str:
-    """'up' om porten lyssnar och PID okänd eller matchar,
+    """'docs' om posten saknar port (ren dokumentationspost),
+    'up' om porten lyssnar och PID okänd eller matchar,
     'conflict' om porten lyssnar med annan känd PID än den registrerade,
     'down' om inget lyssnar på porten."""
+    if service.get("port") is None:
+        return "docs"
     entry = listening.get(service["port"])
     if entry is None:
         return "down"

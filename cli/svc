@@ -65,7 +65,9 @@ def cmd_list(_args):
         print("Inga tjänster registrerade.")
         return
     rows = [
-        (s["name"], s["project"], s["port"], s["status"], s["url"])
+        (s["name"], s["project"],
+         s["port"] if s["port"] is not None else "-",
+         s["status"], s["url"])
         for s in services
     ]
     _print_table(rows, ["NAMN", "PROJEKT", "PORT", "STATUS", "URL"])
@@ -109,9 +111,19 @@ def _service_body(args):
 
 
 def cmd_register(args):
+    if args.port is None and args.docs_file is None and args.docs_md is None:
+        print(
+            "Fel: utan --port måste dokumentation anges "
+            "(--docs-file eller --docs-md).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     body = {"name": args.name, **_service_body(args)}
     svc = _request("POST", "/api/services", body)
-    print(f"Registrerad: {svc['name']} på port {svc['port']} ({svc['url']})")
+    if svc["port"] is not None:
+        print(f"Registrerad: {svc['name']} på port {svc['port']} ({svc['url']})")
+    else:
+        print(f"Registrerad: {svc['name']} som dokumentationspost ({svc['url']})")
 
 
 def cmd_unregister(args):
@@ -166,9 +178,16 @@ def main():
     p.add_argument("--note", help="Notering på reservationen")
     p.set_defaults(func=cmd_port)
 
-    p = sub.add_parser("register", help="Registrera en tjänst")
+    p = sub.add_parser(
+        "register",
+        help="Registrera en tjänst eller dokumentationspost",
+        description="Registrera en tjänst. Utan --port skapas en "
+                    "dokumentationspost (kräver --docs-file eller --docs-md); "
+                    "port kan läggas till senare med svc update.",
+    )
     p.add_argument("name", help="Tjänstens namn (slug: a-z, 0-9, bindestreck)")
-    p.add_argument("--port", type=int, required=True, help="Port tjänsten lyssnar på")
+    p.add_argument("--port", type=int,
+                   help="Port tjänsten lyssnar på (utelämna för dokumentationspost)")
     p.add_argument("--project", required=True, help="Projektnamn")
     p.add_argument("--path", default="/", help="URL-sökväg (default /)")
     p.add_argument("--by", help="Vem som startade, t.ex. 'claude, projekt X'")
@@ -183,8 +202,17 @@ def main():
     p.add_argument("name")
     p.set_defaults(func=cmd_show)
 
-    p = sub.add_parser("update", help="Uppdatera fält på en tjänst")
+    p = sub.add_parser(
+        "update",
+        help="Uppdatera fält på en tjänst",
+        description="Uppdatera fält, t.ex. lägga till --port och --pid på en "
+                    "dokumentationspost när tjänsten startats.",
+    )
     p.add_argument("name")
+    p.add_argument("--port", type=int, help="Port tjänsten lyssnar på")
+    p.add_argument("--project", help="Projektnamn")
+    p.add_argument("--path", help="URL-sökväg")
+    p.add_argument("--by", help="Vem som startade")
     _add_common_fields(p)
     p.set_defaults(func=cmd_update)
 

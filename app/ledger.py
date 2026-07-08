@@ -45,14 +45,17 @@ def _slugify(text: str) -> str:
 
 
 def write_ledger() -> None:
-    """Skriver om liggarfilen från databasen, sorterad på port."""
+    """Skriver om liggarfilen från databasen, sorterad på port.
+    Portlösa dokumentationsposter får '-' i portkolumnen (och sist i listan);
+    import_ledger hoppar över dem eftersom portkolumnen inte är numerisk."""
     lines = [_HEADER]
     for svc in list_services():
+        port = svc["port"] if svc["port"] is not None else "-"
         pid = svc["pid"] if svc["pid"] is not None else "-"
         started = svc.get("started_by") or (svc.get("created_at") or "")[:10] or "-"
         desc = svc.get("description") or svc["name"]
         lines.append(
-            f"| {svc['port']} | {pid} | {svc['project']} | {desc} | {started} |\n"
+            f"| {port} | {pid} | {svc['project']} | {desc} | {started} |\n"
         )
     LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
     LEDGER_PATH.write_text("".join(lines), encoding="utf-8")

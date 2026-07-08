@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS services (
     id INTEGER PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
     project TEXT NOT NULL,
-    port INTEGER UNIQUE NOT NULL,
+    port INTEGER UNIQUE,
     pid INTEGER,
     description TEXT,
     url_path TEXT DEFAULT '/',
@@ -45,11 +45,35 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str)
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
+def _migrate_port_nullable(conn: sqlite3.Connection) -> None:
+    """Bygger om services-tabellen om port fortfarande har NOT NULL.
+
+    SQLite kan inte droppa NOT NULL med ALTER TABLE, så tabellen byggs om:
+    rename -> ny tabell från _SCHEMA -> kopiera rader -> droppa gamla.
+    Idempotent: gör ingenting om port redan tillåter NULL.
+    UNIQUE på port behålls (SQLite tillåter flera NULL i UNIQUE-kolumn).
+    """
+    info = conn.execute("PRAGMA table_info(services)").fetchall()
+    port_col = next((r for r in info if r["name"] == "port"), None)
+    if port_col is None or not port_col["notnull"]:
+        return
+    old_cols = {r["name"] for r in info}
+    conn.execute("ALTER TABLE services RENAME TO services_old")
+    conn.executescript(_SCHEMA)
+    new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(services)")}
+    col_list = ", ".join(sorted(old_cols & new_cols))
+    conn.execute(
+        f"INSERT INTO services ({col_list}) SELECT {col_list} FROM services_old"
+    )
+    conn.execute("DROP TABLE services_old")
+
+
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = get_conn()
     try:
         conn.executescript(_SCHEMA)
+        _migrate_port_nullable(conn)
         # Framtida migreringar läggs till här med _ensure_column(...), t.ex.:
         # _ensure_column(conn, "services", "tags", "TEXT")
         conn.commit()
@@ -72,7 +96,10 @@ def row_to_dict(row: sqlite3.Row) -> dict:
 def list_services() -> list[dict]:
     conn = get_conn()
     try:
-        rows = conn.execute("SELECT * FROM services ORDER BY port").fetchall()
+        # Portlösa dokumentationsposter sorteras sist
+        rows = conn.execute(
+            "SELECT * FROM services ORDER BY port IS NULL, port"
+        ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -97,7 +124,8 @@ def get_service_by_port(port: int) -> dict | None:
 
 
 def create_service(data: dict) -> dict:
-    """Skapar en tjänst. Kastar sqlite3.IntegrityError vid namn-/portkrock."""
+    """Skapar en tjänst. Port kan vara None (dokumentationspost).
+    Kastar sqlite3.IntegrityError vid namn-/portkrock."""
     ts = now_iso()
     conn = get_conn()
     try:
@@ -107,14 +135,15 @@ def create_service(data: dict) -> dict:
                 docs_md, started_by, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                data["name"], data["project"], data["port"], data.get("pid"),
+                data["name"], data["project"], data.get("port"), data.get("pid"),
                 data.get("description"), data.get("url_path") or "/",
                 data.get("docs_path"), data.get("docs_md"),
                 data.get("started_by"), data.get("created_at") or ts, ts,
             ),
         )
         # En reservation på porten förbrukas när tjänsten registreras
-        conn.execute("DELETE FROM reservations WHERE port = ?", (data["port"],))
+        if data.get("port") is not None:
+            conn.execute("DELETE FROM reservations WHERE port = ?", (data["port"],))
         conn.commit()
     finally:
         conn.close()

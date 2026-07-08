@@ -11,8 +11,12 @@
     <div class="container">
       <h1>{{ service.name }}</h1>
       <p class="subtitle">
-        {{ service.project }} - port {{ service.port }} -
-        <a href="{{ service_url }}">{{ service_url }}</a>
+        {% if service.port is not none %}
+          {{ service.project }} - port {{ service.port }} -
+          <a href="{{ service_url }}">{{ service_url }}</a>
+        {% else %}
+          {{ service.project }} - dokumentationspost (ingen port registrerad)
+        {% endif %}
       </p>
     </div>
   </header>

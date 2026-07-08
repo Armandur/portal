@@ -8,7 +8,10 @@ Portalen:
 
 - visar en webbsida med kort för varje registrerad tjänst (namn, projekt,
   port, beskrivning, länk, live-status) plus en dokumentationsvy per tjänst
-  (markdown renderad till HTML)
+  (markdown renderad till HTML, eller en fristående HTML-fil serverad rakt av)
+- kan registrera rena dokumentationsposter utan port - t.ex. projektdocs
+  som skrivits innan någon tjänst körs - som senare uppgraderas med
+  port/PID när tjänsten startas
 - auto-genererar den gamla manuella liggaren
   `~/.claude/running-services.md` från databasen efter varje ändring
   (bakåtkompatibilitet: gamla instruktioner läser den filen)
@@ -72,6 +75,28 @@ svc unregister mitt-projekt
 svc ports
 ```
 
+### Dokumentationsposter (registrering utan port)
+
+Ett projekts dokumentation kan registreras på portalen innan någon tjänst
+körs. Utelämna `--port` - då krävs i stället dokumentation via `--docs-file`
+eller `--docs-md`:
+
+```bash
+# Registrera en docs-post (visas med status "docs" i list och kortvyn)
+svc register mitt-projekt-docs --project mitt-projekt \
+    --docs-file /home/rasmus/workspace/mitt-projekt/api-utforskning.html \
+    --desc "API-utforskning inför bygget"
+
+# Pekar docs-filen på .html/.htm serveras den rakt av som fristående
+# HTML-sida på /docs/{namn}; .md renderas som markdown i docs-vyn.
+
+# Uppgradera posten med port och PID när tjänsten väl startats
+svc update mitt-projekt-docs --port 8123 --pid 12345
+```
+
+Portlösa poster får status `docs`, länkar till sin dokumentationssida i
+stället för en port-URL och skrivs med `-` i liggarens portkolumn.
+
 ## API-översikt
 
 Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
@@ -89,7 +114,7 @@ Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
 
 Statusvärden per tjänst: `up` (porten lyssnar, PID okänd eller matchar),
 `conflict` (porten lyssnar men med annan PID än den registrerade),
-`down` (inget lyssnar).
+`down` (inget lyssnar), `docs` (dokumentationspost utan port).
 
 Portreservationer gäller 15 minuter och städas därefter bort automatiskt.
 När en tjänst registreras på en reserverad port förbrukas reservationen.
