@@ -4,21 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portal - ubuntu-ai</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/tokens.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
+  <header class="container">
+    <hgroup>
       <h1>Portal</h1>
-      <p class="subtitle">Tjänster på den delade dev-VM:en ubuntu-ai</p>
-    </div>
+      <p>Tjänster på den delade dev-VM:en ubuntu-ai</p>
+    </hgroup>
   </header>
 
   <main class="container">
     <section>
       <div class="section-head">
         <h2>Registrerade tjänster</h2>
-        <span id="refresh-info" class="muted"></span>
+        <small id="refresh-info" class="muted"></small>
       </div>
       <div id="services" class="cards">
         <p class="muted">Laddar tjänster...</p>
@@ -28,7 +29,7 @@
     <section>
       <div class="section-head">
         <h2>Delningar</h2>
-        <span class="muted">Tillfälligt delade filer (<code>svc share</code>)</span>
+        <small class="muted">Tillfälligt delade filer (<code>svc share</code>)</small>
       </div>
       <div id="shares">
         <p class="muted">Laddar delningar...</p>
@@ -44,8 +45,8 @@
     </section>
   </main>
 
-  <footer class="container muted">
-    <p>Registrera tjänster via <code>svc</code>-CLI:t eller API:t. Se <a href="/api/docs">API-dokumentation</a>.</p>
+  <footer class="container">
+    <small>Registrera tjänster via <code>svc</code>-CLI:t eller API:t. Se <a href="/api/docs">API-dokumentation</a>.</small>
   </footer>
 
   <script src="/static/utils.js"></script>

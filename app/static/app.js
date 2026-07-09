@@ -69,17 +69,17 @@ function renderProjectCard(services) {
     .map((s) => s.port)
     .join(", ");
   const portLine = ports
-    ? `<span class="project">port ${escapeHtml(ports)}</span>`
+    ? `<span class="card-project">port ${escapeHtml(ports)}</span>`
     : "";
   return `
-    <div class="card">
+    <article>
       <div class="card-head">
         <h3>${escapeHtml(services[0].project)}</h3>
         ${statusBadge(headStatus)}
       </div>
       ${portLine}
       ${rows}
-    </div>`;
+    </article>`;
 }
 
 function humanSize(n) {
