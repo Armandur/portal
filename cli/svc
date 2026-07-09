@@ -6,6 +6,7 @@ miljövariabeln PORTAL_URL (default http://127.0.0.1:8890).
 """
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -145,6 +146,57 @@ def cmd_update(args):
     print(f"Uppdaterad: {svc['name']}")
 
 
+def _human_size(n):
+    if not isinstance(n, int):
+        return "?"
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def cmd_share(args):
+    path = os.path.abspath(args.file)
+    if not os.path.isfile(path):
+        print(f"Fel: filen finns inte: {path}", file=sys.stderr)
+        sys.exit(1)
+    with open(path, "rb") as f:
+        content = f.read()
+    body = {
+        "filename": os.path.basename(path),
+        "content_b64": base64.b64encode(content).decode("ascii"),
+    }
+    if args.desc is not None:
+        body["description"] = args.desc
+    if args.ttl is not None:
+        body["ttl_minutes"] = args.ttl
+    share = _request("POST", "/api/shares", body)
+    print(share["url"])
+    if share.get("expires_at"):
+        print(f"Går ut: {share['expires_at']}", file=sys.stderr)
+    else:
+        print("Går ut: aldrig (tills svc unshare)", file=sys.stderr)
+
+
+def cmd_unshare(args):
+    _request("DELETE", f"/api/shares/{args.uid}")
+    print(f"Borttagen delning: {args.uid}")
+
+
+def cmd_shares(_args):
+    shares = _request("GET", "/api/shares")
+    if not shares:
+        print("Inga aktiva delningar.")
+        return
+    rows = [
+        (s["uid"], s["filename"], _human_size(s.get("size")),
+         s.get("expires_at") or "aldrig", s["url"])
+        for s in shares
+    ]
+    _print_table(rows, ["ID", "FIL", "STORLEK", "GÅR UT", "URL"])
+
+
 def cmd_ports(_args):
     data = _request("GET", "/api/ports")
     rows = []
@@ -218,6 +270,26 @@ def main():
 
     p = sub.add_parser("ports", help="Lista lyssnande portar inkl. oregistrerade")
     p.set_defaults(func=cmd_ports)
+
+    p = sub.add_parser(
+        "share",
+        help="Dela en fil via portalen och få en http-länk",
+        description="Laddar upp en fil till portalen och skriver ut en "
+                    "http://ubuntu-ai-länk. Delningen städas automatiskt när "
+                    "TTL löper ut (default styrs av portalen).",
+    )
+    p.add_argument("file", help="Sökväg till filen som ska delas")
+    p.add_argument("--desc", help="Beskrivning av delningen")
+    p.add_argument("--ttl", type=int,
+                   help="Livslängd i minuter (0 = aldrig, tills unshare)")
+    p.set_defaults(func=cmd_share)
+
+    p = sub.add_parser("unshare", help="Ta bort en delning (fil + post)")
+    p.add_argument("uid", help="Delningens id")
+    p.set_defaults(func=cmd_unshare)
+
+    p = sub.add_parser("shares", help="Lista aktiva delningar")
+    p.set_defaults(func=cmd_shares)
 
     args = parser.parse_args()
     args.func(args)

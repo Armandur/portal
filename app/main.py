@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.config import BASE_DIR, PORTAL_PORT
-from app.database import init_db, upsert_service
+from app.database import clean_expired_shares, init_db, upsert_service
 from app.ledger import import_ledger, write_ledger
 from app.routes import api, pages
 
@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     import_ledger()
     _register_self()
     write_ledger()
+    clean_expired_shares()
     yield
 
 

@@ -1,10 +1,12 @@
-"""SQLite-lager: anslutning, schema och CRUD för tjänster och reservationer."""
+"""SQLite-lager: anslutning, schema och CRUD för tjänster, reservationer
+och delningar (svc share)."""
 
 import re
+import shutil
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from app.config import DB_PATH
+from app.config import DB_PATH, SHARE_DIR
 
 _SLUG_RE = re.compile(r"^[a-z0-9-]+$")
 
@@ -28,6 +30,17 @@ CREATE TABLE IF NOT EXISTS reservations (
     port INTEGER PRIMARY KEY,
     note TEXT,
     reserved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS shares (
+    id INTEGER PRIMARY KEY,
+    uid TEXT UNIQUE NOT NULL,
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    size INTEGER,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT
 );
 """
 
@@ -189,3 +202,112 @@ def upsert_service(data: dict) -> dict:
     if existing:
         return update_service(data["name"], data)
     return create_service(data)
+
+
+# --- Delningar (svc share) ---------------------------------------------------
+# Filerna lagras i SHARE_DIR/<uid>/<filename>. database.py äger hela
+# livscykeln (rad + fil) så städning kan ta bort båda atomärt.
+
+
+def _share_dir(uid: str):
+    return SHARE_DIR / uid
+
+
+def _expires_iso(ttl_minutes: int) -> str | None:
+    """ISO-tidsstämpel TTL minuter fram, eller None om ttl_minutes <= 0."""
+    if ttl_minutes <= 0:
+        return None
+    when = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+    return when.astimezone().isoformat(timespec="seconds")
+
+
+def _is_expired(expires_at: str | None) -> bool:
+    if not expires_at:
+        return False
+    try:
+        exp = datetime.fromisoformat(expires_at)
+    except (ValueError, TypeError):
+        return False
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    return exp < datetime.now(timezone.utc)
+
+
+def create_share(
+    uid: str, filename: str, content: bytes, content_type: str | None,
+    description: str | None, ttl_minutes: int,
+) -> dict:
+    """Sparar filen och en delningspost. Kastar sqlite3.IntegrityError vid uid-krock."""
+    directory = _share_dir(uid)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / filename).write_bytes(content)
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO shares
+               (uid, filename, content_type, size, description, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (uid, filename, content_type, len(content), description,
+             now_iso(), _expires_iso(ttl_minutes)),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    finally:
+        conn.close()
+    return get_share(uid)
+
+
+def get_share(uid: str) -> dict | None:
+    """Returnerar delningen, eller None om den saknas eller har gått ut."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM shares WHERE uid = ?", (uid,)).fetchone()
+    finally:
+        conn.close()
+    if row is None or _is_expired(row["expires_at"]):
+        return None
+    return dict(row)
+
+
+def list_shares() -> list[dict]:
+    """Aktiva delningar, nyast först. Städar utgångna först."""
+    clean_expired_shares()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM shares ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_share(uid: str) -> bool:
+    """Tar bort delningens rad och fil. True om något togs bort."""
+    conn = get_conn()
+    try:
+        cur = conn.execute("DELETE FROM shares WHERE uid = ?", (uid,))
+        conn.commit()
+        removed = cur.rowcount > 0
+    finally:
+        conn.close()
+    shutil.rmtree(_share_dir(uid), ignore_errors=True)
+    return removed
+
+
+def clean_expired_shares() -> int:
+    """Tar bort utgångna delningar (rad + filkatalog). Returnerar antal."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT uid, expires_at FROM shares").fetchall()
+        expired = [r["uid"] for r in rows if _is_expired(r["expires_at"])]
+        for uid in expired:
+            conn.execute("DELETE FROM shares WHERE uid = ?", (uid,))
+        conn.commit()
+    finally:
+        conn.close()
+    for uid in expired:
+        shutil.rmtree(_share_dir(uid), ignore_errors=True)
+    return len(expired)

@@ -82,6 +82,43 @@ function renderProjectCard(services) {
     </div>`;
 }
 
+function humanSize(n) {
+  if (typeof n !== "number") return "?";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return i === 0 ? `${n} B` : `${n.toFixed(1)} ${units[i]}`;
+}
+
+function renderShares(shares) {
+  if (!shares.length) {
+    return '<p class="muted">Inga aktiva delningar.</p>';
+  }
+  const rows = shares
+    .map(
+      (s) => `
+      <tr>
+        <td><a href="${escapeHtml(s.url)}">${escapeHtml(s.filename)}</a></td>
+        <td>${s.description ? escapeHtml(s.description) : '<span class="muted">-</span>'}</td>
+        <td>${escapeHtml(humanSize(s.size))}</td>
+        <td>${
+          s.expires_at
+            ? escapeHtml(new Date(s.expires_at).toLocaleString("sv-SE"))
+            : '<span class="muted">aldrig</span>'
+        }</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <table>
+      <thead><tr><th>Fil</th><th>Beskrivning</th><th>Storlek</th><th>Går ut</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderUnregistered(ports) {
   const unregistered = ports.listening.filter((p) => !p.registered);
   if (unregistered.length === 0) {
@@ -106,16 +143,19 @@ function renderUnregistered(ports) {
 
 async function refresh() {
   const servicesEl = document.getElementById("services");
+  const sharesEl = document.getElementById("shares");
   const unregisteredEl = document.getElementById("unregistered");
   const infoEl = document.getElementById("refresh-info");
   try {
-    const [services, ports] = await Promise.all([
+    const [services, ports, shares] = await Promise.all([
       apiFetch("/api/services"),
       apiFetch("/api/ports"),
+      apiFetch("/api/shares"),
     ]);
     servicesEl.innerHTML = services.length
       ? groupByProject(services).map(renderProjectCard).join("")
       : '<p class="muted">Inga tjänster registrerade ännu.</p>';
+    sharesEl.innerHTML = renderShares(shares);
     unregisteredEl.innerHTML = renderUnregistered(ports);
     infoEl.textContent =
       "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");

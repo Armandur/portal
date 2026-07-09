@@ -21,16 +21,20 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/config.py` - sökvägar, portar, TTL. Allt överridbart via env
   (se .env.example).
 - `app/database.py` - schema, init_db() med ALTER TABLE-guard-mönster
-  (`_ensure_column`), CRUD för services och reservations.
+  (`_ensure_column`), CRUD för services, reservations och shares
+  (delningar; äger både rad och fil i `data/shares/<uid>/`).
 - `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
   statusbedömning, reservationsstädning.
 - `app/ledger.py` - genererar och importerar
   `~/.claude/running-services.md`.
-- `app/routes/api.py` - JSON-API (/api/...).
-- `app/routes/pages.py` - kortvyn (/) och dokumentationsvyn (/docs/{name}).
+- `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
+  (/api/shares).
+- `app/routes/pages.py` - kortvyn (/), dokumentationsvyn (/docs/{name})
+  och delningsservering (/share/{uid}/{filnamn}).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html.
 - `app/static/` - style.css, utils.js (apiFetch, escapeHtml), app.js.
-- `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv).
+- `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
+  register/port/list även share/unshare/shares för fildelning.
 - `deploy/portal.service` - systemd user unit (primär driftväg).
 - `install.sh` - uv sync + unit-installation + svc-symlink. Idempotent.
 - `Dockerfile` - reservspår, kräver --network host --pid host.
@@ -62,6 +66,23 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - **HTML-dokumentation.** Slutar docs_path på .html/.htm serverar
   GET /docs/{name} filens innehåll rakt av som text/html (fristående sida,
   inte inbäddad i docs-templaten). Övriga docs_path renderas som markdown.
+- **Delningar (`svc share`).** Fildelning utan att låsa en port per fil:
+  portalen serverar delningar på sin egen port under
+  `/share/{uid}/{filnamn}` (kanonisk URL; `/share/{uid}` 302-redirectar
+  dit). Egen `shares`-tabell (inte `services`) - delningar har ingen
+  port/PID och hamnar därför inte i liggaren. `svc share` läser filen och
+  POST:ar den base64-kodad i JSON till `/api/shares` (håller CLI:t
+  stdlib-rent utan multipart); portalen genererar `uid`
+  (`secrets.token_hex(6)`), sparar filen i `data/shares/{uid}/` och en rad.
+  Serveras med `content_disposition_type="inline"` så bilder/PDF/HTML visas
+  i webbläsaren. `database.py` äger hela livscykeln (rad + fil) så städning
+  tar bort båda atomärt. **TTL** (`SHARE_TTL_MINUTES`, default 120; `--ttl 0`
+  = aldrig) städas lazily vid `list_shares()`/`get_share()` och vid
+  appstart (`clean_expired_shares` i lifespan) - samma lata mönster som
+  reservationer. Maxstorlek `SHARE_MAX_BYTES` (default 25 MB).
+- **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
+  delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`
+  räcker. Beräknas vid import i config.py.
 - **Länkar alltid till http://ubuntu-ai:PORT** (config.SERVICE_HOST),
   aldrig localhost - användaren når VM:en via hostnamn/Tailscale.
 - Portalen registrerar sig själv vid start (name "portal", pid

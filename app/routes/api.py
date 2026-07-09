@@ -1,12 +1,21 @@
-"""JSON-API för tjänsteregistret och portverktyget."""
+"""JSON-API för tjänsteregistret, portverktyget och delningar."""
 
+import base64
+import binascii
+import mimetypes
+import os
+import secrets
 import sqlite3
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import database as db
-from app.config import PORT_RANGE_END, PORT_RANGE_START, PORTAL_PORT, SERVICE_HOST
+from app.config import (
+    PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL, PORTAL_PORT,
+    SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES,
+)
 from app.ledger import write_ledger
 from app.ports import find_free_port, scan_listening_ports, service_status
 
@@ -40,6 +49,14 @@ class ReserveIn(BaseModel):
     range_start: int = Field(default=PORT_RANGE_START, ge=1, le=65535)
     range_end: int = Field(default=PORT_RANGE_END, ge=1, le=65535)
     note: str | None = None
+
+
+class ShareIn(BaseModel):
+    filename: str
+    content_b64: str
+    content_type: str | None = None
+    description: str | None = None
+    ttl_minutes: int = SHARE_TTL_MINUTES
 
 
 def _with_status(svc: dict, listening: dict) -> dict:
@@ -172,3 +189,58 @@ def reserve_port(body: ReserveIn | None = None):
             409, f"Ingen ledig port i intervallet {body.range_start}-{body.range_end}."
         )
     return {"port": port}
+
+
+def _safe_filename(name: str) -> str:
+    """Plockar ut ett rent basnamn (ingen sökväg, inga separatorer)."""
+    name = os.path.basename((name or "").replace("\\", "/").strip())
+    if not name or name in (".", ".."):
+        return ""
+    return name
+
+
+def _share_out(share: dict) -> dict:
+    out = dict(share)
+    out["url"] = f"{PORTAL_BASE_URL}/share/{share['uid']}/{quote(share['filename'])}"
+    return out
+
+
+@router.get("/shares")
+def list_shares():
+    return [_share_out(s) for s in db.list_shares()]
+
+
+@router.post("/shares", status_code=201)
+def create_share(body: ShareIn):
+    filename = _safe_filename(body.filename)
+    if not filename:
+        raise HTTPException(400, "Ogiltigt filnamn.")
+    try:
+        content = base64.b64decode(body.content_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(400, "content_b64 är inte giltig base64.")
+    if not content:
+        raise HTTPException(400, "Filen är tom.")
+    if len(content) > SHARE_MAX_BYTES:
+        raise HTTPException(
+            413, f"Filen är för stor (max {SHARE_MAX_BYTES // (1024 * 1024)} MB)."
+        )
+    content_type = body.content_type or mimetypes.guess_type(filename)[0]
+    for _ in range(5):
+        uid = secrets.token_hex(6)
+        try:
+            share = db.create_share(
+                uid, filename, content, content_type,
+                body.description, body.ttl_minutes,
+            )
+            return _share_out(share)
+        except sqlite3.IntegrityError:
+            continue
+    raise HTTPException(500, "Kunde inte skapa ett unikt delnings-id, försök igen.")
+
+
+@router.delete("/shares/{uid}")
+def delete_share(uid: str):
+    if not db.delete_share(uid):
+        raise HTTPException(404, f"Ingen delning med id '{uid}' finns.")
+    return {"status": "borttagen", "uid": uid}

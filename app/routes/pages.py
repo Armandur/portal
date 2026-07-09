@@ -4,11 +4,11 @@ from pathlib import Path
 
 import markdown
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app import database as db
-from app.config import BASE_DIR, SERVICE_HOST
+from app.config import BASE_DIR, SERVICE_HOST, SHARE_DIR
 
 router = APIRouter()
 templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
@@ -59,3 +59,28 @@ def service_docs(request: Request, name: str):
         "error": error,
         "service_url": service_url,
     })
+
+
+@router.get("/share/{uid}")
+def share_root(uid: str):
+    share = db.get_share(uid)
+    if share is None:
+        raise HTTPException(404, "Delningen finns inte eller har gått ut.")
+    # Kanonisk URL med filnamn (så webbläsaren namnger nedladdningen rätt)
+    return RedirectResponse(f"/share/{uid}/{share['filename']}", status_code=302)
+
+
+@router.get("/share/{uid}/{filename}")
+def share_file(uid: str, filename: str):
+    share = db.get_share(uid)
+    if share is None or share["filename"] != filename:
+        raise HTTPException(404, "Delningen finns inte eller har gått ut.")
+    path = SHARE_DIR / uid / share["filename"]
+    if not path.is_file():
+        raise HTTPException(404, "Delningens fil saknas.")
+    # inline: bilder/PDF/HTML visas i webbläsaren, annat laddas ned
+    return FileResponse(
+        path,
+        media_type=share["content_type"] or "application/octet-stream",
+        content_disposition_type="inline",
+    )
