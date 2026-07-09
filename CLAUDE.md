@@ -9,8 +9,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - Rå sqlite3 (inte SQLAlchemy - litet lokalt verktyg). DB i `data/portal.db`.
 - Jinja2 för serverrenderad dokumentationsvy, python-markdown
   (extensions: fenced_code, tables) för rendering.
-- Frontend: vanilla JS + HTML + CSS utan bundler. Ljust/mörkt läge via
-  prefers-color-scheme.
+- Frontend: vanilla JS utan bundler + self-hostad Pico CSS (`pico.min.css`)
+  som basstil, egen `tokens.css` ovanpå för identitet (accent, statusbadges,
+  kort-grid). Semantisk HTML (article/hgroup/section). Ljust/mörkt läge via
+  prefers-color-scheme (ingen data-theme; tokens har mörka statusvarianter).
 - Ingen auth (internt verktyg på privat nät). Inga IP-loggar.
 
 ## Filstruktur
@@ -32,7 +34,8 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/routes/pages.py` - kortvyn (/), dokumentationsvyn (/docs/{name})
   och delningsservering (/share/{uid}/{filnamn}).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html.
-- `app/static/` - style.css, utils.js (apiFetch, escapeHtml), app.js.
+- `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
+  egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
   register/port/list även share/unshare/shares för fildelning.
 - `deploy/portal.service` - systemd user unit (primär driftväg).
