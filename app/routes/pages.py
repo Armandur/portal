@@ -4,11 +4,17 @@ from pathlib import Path
 
 import markdown
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.templating import Jinja2Templates
 
 from app import database as db
 from app.config import BASE_DIR, SERVICE_HOST, SHARE_DIR
+from app.share_render import render_markdown_page
 
 router = APIRouter()
 templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
@@ -71,13 +77,20 @@ def share_root(uid: str):
 
 
 @router.get("/share/{uid}/{filename}")
-def share_file(uid: str, filename: str):
+def share_file(uid: str, filename: str, raw: int = 0):
     share = db.get_share(uid)
     if share is None or share["filename"] != filename:
         raise HTTPException(404, "Delningen finns inte eller har gått ut.")
     path = SHARE_DIR / uid / share["filename"]
     if not path.is_file():
         raise HTTPException(404, "Delningens fil saknas.")
+    # Markdown renderas som stylad, sanerad läsvy; ?raw=1 ger källan som text.
+    if Path(share["filename"]).suffix.lower() in (".md", ".markdown"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if raw:
+            return PlainTextResponse(text)
+        raw_url = f"/share/{uid}/{filename}?raw=1"
+        return HTMLResponse(render_markdown_page(text, share["filename"], raw_url))
     # inline: bilder/PDF/HTML visas i webbläsaren, annat laddas ned
     return FileResponse(
         path,

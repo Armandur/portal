@@ -8,7 +8,9 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - Python 3.12, FastAPI, uvicorn. Beroenden hanteras med uv (`uv sync`).
 - Rå sqlite3 (inte SQLAlchemy - litet lokalt verktyg). DB i `data/portal.db`.
 - Jinja2 för serverrenderad dokumentationsvy, python-markdown
-  (extensions: fenced_code, tables) för rendering.
+  (extensions: fenced_code, tables) för rendering. Delade .md-filer renderas
+  också (extensions: tables, fenced_code, toc) och saneras med nh3 (rå-HTML
+  i källan tas bort).
 - Frontend: vanilla JS utan bundler + self-hostad Pico CSS (`pico.min.css`)
   som basstil, egen `tokens.css` ovanpå för identitet (accent, statusbadges,
   kort-grid). Semantisk HTML (article/hgroup/section). Ljust/mörkt läge via
@@ -32,7 +34,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
   (/api/shares).
 - `app/routes/pages.py` - kortvyn (/), dokumentationsvyn (/docs/{name})
-  och delningsservering (/share/{uid}/{filnamn}).
+  och delningsservering (/share/{uid}/{filnamn}; .md renderas som läsvy).
+- `app/share_render.py` - renderar delade .md-filer till självbärande,
+  sanerade HTML-läsvyer (inline CSS med portalens palett). render_text_page
+  finns för framtida .txt.
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html.
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
   egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.
@@ -83,6 +88,17 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   = aldrig) städas lazily vid `list_shares()`/`get_share()` och vid
   appstart (`clean_expired_shares` i lifespan) - samma lata mönster som
   reservationer. Maxstorlek `SHARE_MAX_BYTES` (default 25 MB).
+- **Markdown-delningar renderas som läsvy.** Slutar filnamnet på
+  `.md`/`.markdown` renderar `GET /share/{uid}/{fil}` källan server-side
+  (vid visning, så uppdaterad källa syns) till en självbärande, stylad
+  HTML-sida (`app/share_render.py`): inline CSS med portalens palett,
+  mörkt/ljust via prefers-color-scheme, mobil-först, ~52rem, kod/tabeller
+  scrollar internt (aldrig sidbreddsscroll). `?raw=1` ger källan som
+  text/plain, och en "visa källa"-länk pekar dit. **Säkerhet:** python-markdown
+  släpper igenom rå-HTML i källan oavsett md_in_html, så outputen saneras med
+  nh3 (allowlist av taggar/attribut) - en delad `.md` kan inte köra skript.
+  Andra filtyper är oförändrade. Renderaren är generell (`render_text_page`
+  för framtida `.txt`).
 - **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
   delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`
   räcker. Beräknas vid import i config.py.
