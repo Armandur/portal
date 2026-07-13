@@ -2,8 +2,11 @@
 
 Markdown renderas med python-markdown och saneras med nh3 (rå-HTML i källan
 tas bort så en delad .md inte kan köra skript - python-markdown släpper annars
-igenom rå-HTML oavsett md_in_html). Sidan är helt fristående: inline CSS, inga
-externa resurser, mörkt/ljust via prefers-color-scheme, mobil-först.
+igenom rå-HTML oavsett md_in_html). Kodblock med angivet språk syntaxfärgas
+server-side med Pygments (codehilite) - CSS-klasser, inte inline-style, så nh3
+inte strippar färgerna; temats CSS inline:as i sidan. Sidan är helt fristående:
+inline CSS, inga externa resurser, mörkt/ljust via prefers-color-scheme,
+mobil-först.
 
 Generell nog att utökas: render_text_page() ger samma skelett med innehållet
 i en <pre> (för t.ex. .txt).
@@ -13,6 +16,19 @@ from html import escape
 
 import markdown
 import nh3
+from pygments.formatters import HtmlFormatter
+
+# Pygments-teman för syntaxfärgning (ljust/mörkt). Bytas här om annan stil önskas.
+_PYGMENTS_LIGHT = "default"
+_PYGMENTS_DARK = "monokai"
+
+
+def _pygments_css() -> str:
+    """Token-CSS för ljust läge plus mörkt läge wrappat i prefers-color-scheme.
+    Scope:ad till .codehilite så den bara rör syntaxfärgade kodblock."""
+    light = HtmlFormatter(style=_PYGMENTS_LIGHT).get_style_defs(".codehilite")
+    dark = HtmlFormatter(style=_PYGMENTS_DARK).get_style_defs(".codehilite")
+    return f"{light}\n@media (prefers-color-scheme: dark) {{\n{dark}\n}}\n"
 
 # Taggar/attribut vi tillåter i renderad markdown. Allt annat (script, iframe,
 # on*-attribut, style, javascript:-URL:er) tas bort av nh3.
@@ -30,7 +46,7 @@ _ALLOWED_ATTRS = {
     "h4": {"id"}, "h5": {"id"}, "h6": {"id"},
     "th": {"align"}, "td": {"align"},
     "ol": {"start"}, "li": {"id"},
-    "code": {"class"}, "span": {"class"}, "div": {"class"},
+    "code": {"class"}, "span": {"class"}, "div": {"class"}, "pre": {"class"},
 }
 
 _PAGE = """<!DOCTYPE html>
@@ -88,6 +104,15 @@ pre {
   padding: 0.85rem 1rem; overflow-x: auto;
   font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88rem; line-height: 1.5;
 }
+/* Syntaxfärgade kodblock (Pygments/codehilite): container får portalens form,
+   Pygments-temat sätter bakgrund + token-färger. Inre <pre> nollställs. */
+.codehilite {
+  border: 1px solid var(--border); border-radius: 8px; margin: 0 0 1rem;
+  padding: 0.85rem 1rem; overflow-x: auto;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88rem; line-height: 1.5;
+}
+.codehilite pre { margin: 0; padding: 0; border: none; background: none; overflow: visible; }
+.codehilite code { background: none; padding: 0; font-size: inherit; }
 code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
 :not(pre) > code {
   background: var(--code-bg); padding: 0.12rem 0.35rem; border-radius: 4px; font-size: 0.85em;
@@ -98,6 +123,7 @@ th, td { border: 1px solid var(--border); padding: 0.45rem 0.7rem; text-align: l
 th { background: var(--code-bg); }
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+@@PYGMENTS@@
 </style>
 </head>
 <body>
@@ -110,6 +136,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 </body>
 </html>
 """
+
+# Baka in Pygments-temats CSS en gång (self-bärande sida, ingen extern fil).
+_PAGE = _PAGE.replace("@@PYGMENTS@@", _pygments_css())
 
 
 def _page(title: str, name: str, raw_url: str, body_html: str) -> str:
@@ -124,7 +153,14 @@ def _page(title: str, name: str, raw_url: str, body_html: str) -> str:
 def render_markdown_page(md_text: str, filename: str, raw_url: str) -> str:
     """Renderar markdown till en fristående, sanerad HTML-sida."""
     html = markdown.markdown(
-        md_text, extensions=["tables", "fenced_code", "toc"], output_format="html"
+        md_text,
+        extensions=["tables", "fenced_code", "toc", "codehilite"],
+        extension_configs={
+            # guess_lang=False: färga bara block med angivet språk (```python),
+            # så vanlig text i språklösa block inte felgissas.
+            "codehilite": {"guess_lang": False, "css_class": "codehilite"},
+        },
+        output_format="html",
     )
     html = nh3.clean(
         html,

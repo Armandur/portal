@@ -9,8 +9,8 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - Rå sqlite3 (inte SQLAlchemy - litet lokalt verktyg). DB i `data/portal.db`.
 - Jinja2 för serverrenderad dokumentationsvy, python-markdown
   (extensions: fenced_code, tables) för rendering. Delade .md-filer renderas
-  också (extensions: tables, fenced_code, toc) och saneras med nh3 (rå-HTML
-  i källan tas bort).
+  också (extensions: tables, fenced_code, toc, codehilite) med Pygments-
+  syntaxfärgning och saneras med nh3 (rå-HTML i källan tas bort).
 - Frontend: vanilla JS utan bundler + self-hostad Pico CSS (`pico.min.css`)
   som basstil, egen `tokens.css` ovanpå för identitet (accent, statusbadges,
   kort-grid). Semantisk HTML (article/hgroup/section). Ljust/mörkt läge via
@@ -94,11 +94,16 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   HTML-sida (`app/share_render.py`): inline CSS med portalens palett,
   mörkt/ljust via prefers-color-scheme, mobil-först, ~52rem, kod/tabeller
   scrollar internt (aldrig sidbreddsscroll). `?raw=1` ger källan som
-  text/plain, och en "visa källa"-länk pekar dit. **Säkerhet:** python-markdown
-  släpper igenom rå-HTML i källan oavsett md_in_html, så outputen saneras med
-  nh3 (allowlist av taggar/attribut) - en delad `.md` kan inte köra skript.
-  Andra filtyper är oförändrade. Renderaren är generell (`render_text_page`
-  för framtida `.txt`).
+  text/plain, och en "visa källa"-länk pekar dit. Kodblock med angivet språk
+  (```python etc) syntaxfärgas med Pygments/codehilite - CSS-klasser (inte
+  inline-style, som nh3 hade strippat), och temats CSS inline:as (`default`
+  ljust, `monokai` mörkt, bytbara överst i share_render.py). guess_lang=False:
+  bara block med angivet språk färgas. **Säkerhet:** python-markdown släpper
+  igenom rå-HTML i källan oavsett md_in_html, så outputen saneras med nh3
+  (allowlist av taggar/attribut, class bevaras för codehilite) - en delad
+  `.md` kan inte köra skript. Andra filtyper är oförändrade (även HTML-
+  delningar serveras rakt av; deras highlighting är uppladdarens ansvar).
+  Renderaren är generell (`render_text_page` för framtida `.txt`).
 - **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
   delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`
   räcker. Beräknas vid import i config.py.
