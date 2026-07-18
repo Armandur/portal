@@ -18,6 +18,8 @@ Portalen:
 - delar ut garanterat lediga portar (kollar registret, live-lyssnande portar
   via `ss -tlnp` och aktiva reservationer)
 - listar alla lyssnande portar, inklusive oregistrerade
+- visar öppna todos per projekt (read-only från backlog-verktyget), med
+  renderad markdown-beskrivning och länk till tasken i backlog web
 
 Portalen kör själv på port 8890: http://ubuntu-ai:8890
 
