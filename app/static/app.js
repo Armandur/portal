@@ -141,20 +141,62 @@ function renderUnregistered(ports) {
     </table>`;
 }
 
+function renderTodoRow(todo) {
+  const prio = `P${todo.priority}`;
+  const doing = todo.status === "doing"
+    ? '<span class="badge doing">pågår</span>'
+    : "";
+  const ctx = todo.project_path
+    ? `<code class="todo-ctx">${escapeHtml(todo.project_path)}</code>`
+    : "";
+  return `
+    <div class="todo-row">
+      <span class="badge prio-${escapeHtml(prio)}">${escapeHtml(prio)}</span>
+      <span class="todo-title">${escapeHtml(todo.title)}</span>
+      ${doing}
+      ${ctx}
+    </div>`;
+}
+
+function renderTodoCard(group) {
+  const rows = group.todos.map(renderTodoRow).join("");
+  return `
+    <article>
+      <div class="card-head">
+        <h3>${escapeHtml(group.project)}</h3>
+        <span class="badge">${group.todos.length}</span>
+      </div>
+      ${rows}
+    </article>`;
+}
+
+function renderTodos(data) {
+  if (!data.available) {
+    return `<p class="muted">Todos otillgängliga: ${escapeHtml(data.error || "okänt fel")}.</p>`;
+  }
+  if (!data.projects.length) {
+    return '<p class="muted">Inga öppna todos.</p>';
+  }
+  return data.projects.map(renderTodoCard).join("");
+}
+
 async function refresh() {
   const servicesEl = document.getElementById("services");
+  const todosEl = document.getElementById("todos");
   const sharesEl = document.getElementById("shares");
   const unregisteredEl = document.getElementById("unregistered");
   const infoEl = document.getElementById("refresh-info");
   try {
-    const [services, ports, shares] = await Promise.all([
+    const [services, todos, ports, shares] = await Promise.all([
       apiFetch("/api/services"),
+      apiFetch("/api/todos"),
       apiFetch("/api/ports"),
       apiFetch("/api/shares"),
     ]);
     servicesEl.innerHTML = services.length
       ? groupByProject(services).map(renderProjectCard).join("")
       : '<p class="muted">Inga tjänster registrerade ännu.</p>';
+    todosEl.innerHTML = renderTodos(todos);
     sharesEl.innerHTML = renderShares(shares);
     unregisteredEl.innerHTML = renderUnregistered(ports);
     infoEl.textContent =

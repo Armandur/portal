@@ -38,6 +38,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/share_render.py` - renderar delade .md-filer till självbärande,
   sanerade HTML-läsvyer (inline CSS med portalens palett). render_text_page
   finns för framtida .txt.
+- `app/backlog.py` - read-only läsvy mot backlog-verktyget (mazen160/backlog).
+  Skalar ut till `backlog task list --json` (stabilt gränssnitt, aldrig rå
+  SQLite), kort cache, robust felhantering. Portalen äger inga todos - backlog
+  skriver, portalen visar (/api/todos, Todos-sektionen på förstasidan).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html.
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
   egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.

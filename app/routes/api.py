@@ -11,6 +11,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app import backlog
 from app import database as db
 from app.config import (
     PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL, PORTAL_PORT,
@@ -79,6 +80,12 @@ def _validate_port(port: int) -> None:
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@router.get("/todos")
+def list_todos():
+    """Öppna todos per projekt, lästa read-only från backlog-CLI:t."""
+    return backlog.open_todos()
 
 
 @router.get("/services")

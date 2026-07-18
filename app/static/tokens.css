@@ -89,6 +89,32 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 .badge.conflict, .badge.mixed { color: var(--conflict); background: var(--conflict-bg); }
 .badge.docs { color: var(--docs); background: var(--docs-bg); }
 
+/* Prioritetsbadges för todos: P1-P2 bränner, P3 neutral, P4-P5 tonas ner */
+.badge.prio-P1, .badge.prio-P2 { color: var(--down); background: var(--down-bg); }
+.badge.prio-P3 { color: var(--conflict); background: var(--conflict-bg); }
+.badge.prio-P4, .badge.prio-P5 {
+  color: var(--pico-muted-color);
+  background: var(--pico-muted-border-color);
+}
+.badge.doing { color: var(--docs); background: var(--docs-bg); }
+
+/* Todo-rader inuti projektkort */
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
+}
+.todo-row + .todo-row {
+  border-top: 1px solid var(--pico-muted-border-color);
+  padding-top: 0.4rem;
+  margin-top: 0.4rem;
+}
+.todo-row .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
+.todo-title { flex: 1 1 60%; }
+.todo-ctx { font-size: 0.78rem; color: var(--pico-muted-color); background: none; }
+
 /* Tjänsterader inuti projektkort med flera tjänster */
 .svc-row { display: flex; flex-direction: column; gap: 0.25rem; }
 .svc-row + .svc-row {

@@ -34,6 +34,12 @@ SERVICE_HOST = os.environ.get("PORTAL_SERVICE_HOST", "ubuntu-ai")
 # Port 80 utelämnas så http://ubuntu-ai räcker.
 PORTAL_BASE_URL = f"http://{SERVICE_HOST}" + ("" if PORTAL_PORT == 80 else f":{PORTAL_PORT}")
 
+# backlog-verktyget (mazen160/backlog): portalen läser todos read-only via
+# CLI:t. Absolut sökväg krävs - systemd user-unitens PATH inkluderar inte
+# nödvändigtvis ~/.local/bin.
+BACKLOG_BIN = os.environ.get("PORTAL_BACKLOG_BIN", str(Path.home() / ".local" / "bin" / "backlog"))
+BACKLOG_PROFILE = os.environ.get("PORTAL_BACKLOG_PROFILE", "default")
+
 # Portreservationer gäller så här många minuter innan de städas bort
 RESERVATION_TTL_MINUTES = int(os.environ.get("PORTAL_RESERVATION_TTL", "15"))
 
