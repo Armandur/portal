@@ -200,30 +200,36 @@ function renderTodos(data) {
   return data.projects.map(renderTodoCard).join("");
 }
 
+// Varje sektion hämtas och renderas oberoende: ett fel i en fetch fastnar
+// inte de andra korten i "Laddar...", och felet pekar ut rätt sektion.
+const SECTIONS = [
+  {
+    id: "services",
+    url: "/api/services",
+    label: "tjänster",
+    render: (services) =>
+      services.length
+        ? groupByProject(services).map(renderProjectCard).join("")
+        : '<p class="muted">Inga tjänster registrerade ännu.</p>',
+  },
+  { id: "todos", url: "/api/todos", label: "todos", render: renderTodos },
+  { id: "shares", url: "/api/shares", label: "delningar", render: renderShares },
+  { id: "unregistered", url: "/api/ports", label: "portar", render: renderUnregistered },
+];
+
 async function refresh() {
-  const servicesEl = document.getElementById("services");
-  const todosEl = document.getElementById("todos");
-  const sharesEl = document.getElementById("shares");
-  const unregisteredEl = document.getElementById("unregistered");
-  const infoEl = document.getElementById("refresh-info");
-  try {
-    const [services, todos, ports, shares] = await Promise.all([
-      apiFetch("/api/services"),
-      apiFetch("/api/todos"),
-      apiFetch("/api/ports"),
-      apiFetch("/api/shares"),
-    ]);
-    servicesEl.innerHTML = services.length
-      ? groupByProject(services).map(renderProjectCard).join("")
-      : '<p class="muted">Inga tjänster registrerade ännu.</p>';
-    todosEl.innerHTML = renderTodos(todos);
-    sharesEl.innerHTML = renderShares(shares);
-    unregisteredEl.innerHTML = renderUnregistered(ports);
-    infoEl.textContent =
-      "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");
-  } catch (err) {
-    servicesEl.innerHTML = `<p class="muted">Kunde inte hämta tjänster: ${escapeHtml(err.message)}</p>`;
-  }
+  await Promise.all(
+    SECTIONS.map(async (sec) => {
+      const el = document.getElementById(sec.id);
+      try {
+        el.innerHTML = sec.render(await apiFetch(sec.url));
+      } catch (err) {
+        el.innerHTML = `<p class="muted">Kunde inte hämta ${escapeHtml(sec.label)}: ${escapeHtml(err.message)}</p>`;
+      }
+    })
+  );
+  document.getElementById("refresh-info").textContent =
+    "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");
 }
 
 refresh();
