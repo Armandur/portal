@@ -194,10 +194,15 @@ function renderTodos(data) {
   if (!data.available) {
     return `<p class="muted">Todos otillgängliga: ${escapeHtml(data.error || "okänt fel")}.</p>`;
   }
+  // Backend signalerar truncated när task-listan avkortades av gränsen - då kan
+  // öppna todos saknas, vilket ska synas i stället för att döljas.
+  const warning = data.truncated
+    ? '<p class="notice warn">Listan är avkortad - vissa öppna todos kan saknas.</p>'
+    : "";
   if (!data.projects.length) {
-    return '<p class="muted">Inga öppna todos.</p>';
+    return warning + '<p class="muted">Inga öppna todos.</p>';
   }
-  return data.projects.map(renderTodoCard).join("");
+  return warning + data.projects.map(renderTodoCard).join("");
 }
 
 // Varje sektion hämtas och renderas oberoende: ett fel i en fetch fastnar

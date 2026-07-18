@@ -195,3 +195,11 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
   background: var(--down-bg);
   border: 1px solid var(--down);
 }
+.notice.warn {
+  color: var(--conflict);
+  background: var(--conflict-bg);
+  border: 1px solid var(--conflict);
+  grid-column: 1 / -1;   /* spänn över hela kort-gridet i #todos */
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
