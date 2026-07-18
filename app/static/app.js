@@ -153,13 +153,17 @@ function renderTodoRow(todo) {
     ? `<code class="todo-ctx">${escapeHtml(todo.project_path)}</code>`
     : "";
   // description_html är renderad + sanerad server-side (bleach allowlist),
-  // därför säker att injicera. summary escapas (ren text).
-  const desc = todo.description_html
-    ? `<details class="todo-desc">
-        <summary>${escapeHtml(todo.description_summary || "Detaljer")}</summary>
-        <div class="todo-desc-body">${todo.description_html}</div>
-      </details>`
-    : "";
+  // därför säker att injicera. Korta beskrivningar (collapse=false) renderas
+  // inline; långa fälls ihop i en <details> med prosa-summary (escapas).
+  let desc = "";
+  if (todo.description_html) {
+    desc = todo.collapse
+      ? `<details class="todo-desc">
+          <summary>${escapeHtml(todo.description_summary || "Detaljer")}</summary>
+          <div class="todo-desc-body">${todo.description_html}</div>
+        </details>`
+      : `<div class="todo-desc todo-desc-body">${todo.description_html}</div>`;
+  }
   // Titeln (med ref) länkar till tasken i backlog web-UI:t.
   return `
     <div class="todo-row">

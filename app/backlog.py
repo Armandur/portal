@@ -41,6 +41,33 @@ def _render_description(text: str) -> str:
     )
     return bleach.clean(html, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS, strip=True)
 
+
+# Beskrivningar kortare än så här (ren text) renderas inline utan <details> -
+# en utfällning som visar samma text igen tillför inget.
+_COLLAPSE_THRESHOLD = 160
+
+
+def _summary(text: str) -> str:
+    """Prosa-preview till <summary>: hoppa över rubrik-/HR-rader (t.ex. '## Context'),
+    strippa list-/checkbox-markörer, ta första meningen (~100 tecken)."""
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or set(s) <= {"-", "*", "_"}:
+            continue  # tom rad, rubrik, eller horisontell linje
+        s = s.lstrip("-*0123456789. ").strip()               # listmarkör
+        s = s.replace("[ ]", "").replace("[x]", "").strip()  # checkbox
+        if not s:
+            continue
+        sentence = s.split(". ")[0].rstrip(".")
+        return f"{sentence[:100]}…" if len(sentence) > 100 else sentence
+    return ""
+
+
+def _plaintext(html: str) -> str:
+    """Ren text ur renderad HTML - för att bedöma om en beskrivning är lång."""
+    return bleach.clean(html, tags=[], strip=True).strip()
+
+
 _cache: dict = {"at": 0.0, "data": None}
 _CACHE_TTL = 15.0
 
@@ -84,17 +111,16 @@ def _shape(task: dict) -> dict:
     actor = task.get("actor") or {}
     ref = f"TASK-{task['seq']}" if task.get("seq") is not None else task.get("id", "")
     description = task.get("description") or ""
-    # Kort sammanfattning till <summary>: första icke-tomma raden, utan markdown-brus.
-    summary = next(
-        (ln.lstrip("#-* ").strip() for ln in description.splitlines() if ln.strip()),
-        "",
-    )
+    description_html = _render_description(description)
+    # Fäll bara ihop långa beskrivningar; korta renderas inline (klienten följer collapse).
+    collapse = len(_plaintext(description_html)) > _COLLAPSE_THRESHOLD
     return {
         "ref": ref,
         "title": task.get("title", ""),
         "description": description,
-        "description_html": _render_description(description),
-        "description_summary": summary,
+        "description_html": description_html,
+        "description_summary": _summary(description),
+        "collapse": collapse,
         "priority": task.get("priority", 3),
         "status": task.get("status", "todo"),
         "type": task.get("type", "task"),
