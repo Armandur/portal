@@ -22,9 +22,14 @@ async function apiFetch(url, options = {}) {
   return resp.json();
 }
 
-/** Escapar text för säker HTML-interpolation. */
+/**
+ * Escapar text för säker HTML-interpolation - även i attributkontext.
+ * textContent->innerHTML täcker < > &; vi escapar dessutom citattecken så
+ * värdet inte kan bryta ut ur ett href/class-attribut. Textnoder påverkas
+ * inte visuellt: &quot;/&#39; avkodas tillbaka när strängen sätts som innerHTML.
+ */
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
+  return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
