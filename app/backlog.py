@@ -11,7 +11,7 @@ import json
 import subprocess
 import time
 
-from app.config import BACKLOG_BIN, BACKLOG_PROFILE
+from app.config import BACKLOG_BIN, BACKLOG_PROFILE, BACKLOG_WEB_BASE
 
 # Prioritet lagras som heltal 1-5 i backlog; visa som P1-P5.
 _OPEN_STATUSES = ("todo", "doing")
@@ -43,15 +43,18 @@ def _shape(task: dict) -> dict:
     """Plockar ut de fält portalen visar och normaliserar formatet."""
     project = task.get("project") or {}
     actor = task.get("actor") or {}
+    ref = f"TASK-{task['seq']}" if task.get("seq") is not None else task.get("id", "")
     return {
-        "ref": f"TASK-{task['seq']}" if task.get("seq") is not None else task.get("id", ""),
+        "ref": ref,
         "title": task.get("title", ""),
+        "description": task.get("description") or "",
         "priority": task.get("priority", 3),
         "status": task.get("status", "todo"),
         "type": task.get("type", "task"),
         "project": project.get("alias", "okänt"),
         "project_path": task.get("project_path") or "",
         "actor": f"{actor.get('kind', '')}:{actor.get('name', '')}".strip(":"),
+        "web_url": f"{BACKLOG_WEB_BASE}/tasks/{ref}" if ref else BACKLOG_WEB_BASE,
     }
 
 

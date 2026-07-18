@@ -149,12 +149,19 @@ function renderTodoRow(todo) {
   const ctx = todo.project_path
     ? `<code class="todo-ctx">${escapeHtml(todo.project_path)}</code>`
     : "";
+  const desc = todo.description
+    ? `<p class="todo-desc">${escapeHtml(todo.description)}</p>`
+    : "";
+  // Titeln (med ref) länkar till tasken i backlog web-UI:t.
   return `
     <div class="todo-row">
       <span class="badge prio-${escapeHtml(prio)}">${escapeHtml(prio)}</span>
-      <span class="todo-title">${escapeHtml(todo.title)}</span>
+      <a class="todo-title" href="${escapeHtml(todo.web_url)}" target="_blank" rel="noopener">
+        <span class="todo-ref">${escapeHtml(todo.ref)}</span> ${escapeHtml(todo.title)}
+      </a>
       ${doing}
       ${ctx}
+      ${desc}
     </div>`;
 }
 

@@ -112,8 +112,27 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
   margin-top: 0.4rem;
 }
 .todo-row .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
-.todo-title { flex: 1 1 60%; }
-.todo-ctx { font-size: 0.78rem; color: var(--pico-muted-color); background: none; }
+.todo-title { flex: 1 1 60%; text-decoration: none; }
+.todo-title:hover { text-decoration: underline; }
+.todo-ref {
+  font-family: var(--pico-font-family-monospace);
+  font-size: 0.78rem;
+  color: var(--pico-muted-color);
+  margin-right: 0.15rem;
+}
+.todo-ctx {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--pico-muted-color);
+  background: none;
+}
+.todo-desc {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0;
+  font-size: 0.82rem;
+  color: var(--pico-muted-color);
+  white-space: pre-wrap;
+}
 
 /* Tjänsterader inuti projektkort med flera tjänster */
 .svc-row { display: flex; flex-direction: column; gap: 0.25rem; }
