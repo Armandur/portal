@@ -146,6 +146,9 @@ function renderTodoRow(todo) {
   const doing = todo.status === "doing"
     ? '<span class="badge doing">pågår</span>'
     : "";
+  const src = todo.source
+    ? `<span class="badge src">${escapeHtml(todo.source)}</span>`
+    : "";
   const ctx = todo.project_path
     ? `<code class="todo-ctx">${escapeHtml(todo.project_path)}</code>`
     : "";
@@ -160,6 +163,7 @@ function renderTodoRow(todo) {
         <span class="todo-ref">${escapeHtml(todo.ref)}</span> ${escapeHtml(todo.title)}
       </a>
       ${doing}
+      ${src}
       ${ctx}
       ${desc}
     </div>`;

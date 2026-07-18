@@ -97,6 +97,11 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
   background: var(--pico-muted-border-color);
 }
 .badge.doing { color: var(--docs); background: var(--docs-bg); }
+.badge.src {
+  color: var(--pico-muted-color);
+  background: var(--pico-muted-border-color);
+  font-weight: 500;
+}
 
 /* Todo-rader inuti projektkort */
 .todo-row {

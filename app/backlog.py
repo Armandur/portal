@@ -53,6 +53,7 @@ def _shape(task: dict) -> dict:
         "type": task.get("type", "task"),
         "project": project.get("alias", "okänt"),
         "project_path": task.get("project_path") or "",
+        "source": task.get("source") or "",
         "actor": f"{actor.get('kind', '')}:{actor.get('name', '')}".strip(":"),
         "web_url": f"{BACKLOG_WEB_BASE}/tasks/{ref}" if ref else BACKLOG_WEB_BASE,
     }
