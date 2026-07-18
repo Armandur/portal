@@ -15,28 +15,43 @@ from app.config import BACKLOG_BIN, BACKLOG_PROFILE, BACKLOG_WEB_BASE
 
 # Prioritet lagras som heltal 1-5 i backlog; visa som P1-P5.
 _OPEN_STATUSES = ("todo", "doing")
+_LIMIT = 500
 
 _cache: dict = {"at": 0.0, "data": None}
 _CACHE_TTL = 15.0
 
 
-def _run_list() -> list[dict]:
-    """Kör `backlog task list --json` och returnerar rå task-lista.
+def _run_list() -> tuple[list[dict], bool]:
+    """Hämtar öppna tasks (todo + doing) och returnerar (tasks, truncated).
+
+    Filtrerar på status i CLI-anropet så klarmarkerade (done) aldrig hämtas -
+    annars kunde de tränga ut öppna todos ur en olfiltrerad lista vid --limit.
+    truncated=True om någon status-batch nådde gränsen (öppna todos kan då
+    saknas och det ska signaleras, inte döljas bakom available=true).
 
     Kastar vid processfel eller trasig JSON - anroparen fångar och visar
     ett tydligt fel i stället för att krascha vyn.
     """
-    proc = subprocess.run(
-        [
-            BACKLOG_BIN, "task", "list",
-            "--json", "--profile", BACKLOG_PROFILE,
-            "--sort", "priority", "--limit", "500",
-        ],
-        capture_output=True, text=True, timeout=5,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or f"backlog avslutade med kod {proc.returncode}")
-    return json.loads(proc.stdout).get("tasks", [])
+    tasks: list[dict] = []
+    truncated = False
+    # backlog task list tar ett --status-värde per anrop, så en batch per status.
+    for status in _OPEN_STATUSES:
+        proc = subprocess.run(
+            [
+                BACKLOG_BIN, "task", "list",
+                "--json", "--profile", BACKLOG_PROFILE,
+                "--status", status,
+                "--sort", "priority", "--limit", str(_LIMIT),
+            ],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or f"backlog avslutade med kod {proc.returncode}")
+        batch = json.loads(proc.stdout).get("tasks", [])
+        tasks.extend(batch)
+        if len(batch) >= _LIMIT:
+            truncated = True
+    return tasks, truncated
 
 
 def _shape(task: dict) -> dict:
@@ -84,12 +99,13 @@ def open_todos() -> dict:
         return _cache["data"]
 
     try:
-        projects = _group(_run_list())
-        data = {"available": True, "error": None, "projects": projects}
+        tasks, truncated = _run_list()
+        projects = _group(tasks)
+        data = {"available": True, "error": None, "truncated": truncated, "projects": projects}
     except FileNotFoundError:
-        data = {"available": False, "error": "backlog-binären hittas inte", "projects": []}
+        data = {"available": False, "error": "backlog-binären hittas inte", "truncated": False, "projects": []}
     except (subprocess.TimeoutExpired, RuntimeError, json.JSONDecodeError, KeyError) as exc:
-        data = {"available": False, "error": str(exc), "projects": []}
+        data = {"available": False, "error": str(exc), "truncated": False, "projects": []}
 
     _cache["at"] = now
     _cache["data"] = data
