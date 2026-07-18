@@ -11,11 +11,35 @@ import json
 import subprocess
 import time
 
+import bleach
+import markdown as _md
+
 from app.config import BACKLOG_BIN, BACKLOG_PROFILE, BACKLOG_WEB_BASE
 
 # Prioritet lagras som heltal 1-5 i backlog; visa som P1-P5.
 _OPEN_STATUSES = ("todo", "doing")
 _LIMIT = 500
+
+# Task-descriptions är markdown. De renderas server-side och SANERAS med en
+# allowlist innan de skickas till klienten (som injicerar dem via innerHTML) -
+# så inget injektionsutrymme öppnas oavsett vad en task-beskrivning innehåller.
+_ALLOWED_TAGS = [
+    "h2", "h3", "h4", "p", "ul", "ol", "li", "code", "pre",
+    "strong", "em", "a", "br", "hr", "blockquote", "input",
+]
+_ALLOWED_ATTRS = {"a": ["href", "title"], "input": ["type", "checked", "disabled"]}
+
+
+def _render_description(text: str) -> str:
+    """Renderar markdown -> sanerad HTML (allowlist). Aldrig råa taggar/skript."""
+    if not text:
+        return ""
+    html = _md.markdown(
+        text,
+        extensions=["fenced_code", "tables", "pymdownx.tasklist"],
+        extension_configs={"pymdownx.tasklist": {"custom_checkbox": False}},
+    )
+    return bleach.clean(html, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS, strip=True)
 
 _cache: dict = {"at": 0.0, "data": None}
 _CACHE_TTL = 15.0
@@ -59,10 +83,18 @@ def _shape(task: dict) -> dict:
     project = task.get("project") or {}
     actor = task.get("actor") or {}
     ref = f"TASK-{task['seq']}" if task.get("seq") is not None else task.get("id", "")
+    description = task.get("description") or ""
+    # Kort sammanfattning till <summary>: första icke-tomma raden, utan markdown-brus.
+    summary = next(
+        (ln.lstrip("#-* ").strip() for ln in description.splitlines() if ln.strip()),
+        "",
+    )
     return {
         "ref": ref,
         "title": task.get("title", ""),
-        "description": task.get("description") or "",
+        "description": description,
+        "description_html": _render_description(description),
+        "description_summary": summary,
         "priority": task.get("priority", 3),
         "status": task.get("status", "todo"),
         "type": task.get("type", "task"),

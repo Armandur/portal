@@ -135,9 +135,28 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
   flex-basis: 100%;
   margin: 0.1rem 0 0;
   font-size: 0.82rem;
-  color: var(--pico-muted-color);
-  white-space: pre-wrap;
 }
+.todo-desc > summary {
+  cursor: pointer;
+  color: var(--pico-muted-color);
+}
+.todo-desc-body {
+  margin-top: 0.35rem;
+  color: var(--pico-muted-color);
+  overflow-wrap: break-word;
+}
+.todo-desc-body code { overflow-wrap: anywhere; }
+.todo-desc-body > :first-child { margin-top: 0; }
+.todo-desc-body :is(h2, h3, h4) {
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0.2rem;
+}
+.todo-desc-body p { margin: 0.3rem 0; }
+.todo-desc-body ul,
+.todo-desc-body ol { margin: 0.2rem 0 0.2rem 1.1rem; }
+.todo-desc-body li { margin: 0.1rem 0; }
+.todo-desc-body code { font-size: 0.9em; }
+.todo-desc-body pre { overflow-x: auto; }
 
 /* Tjänsterader inuti projektkort med flera tjänster */
 .svc-row { display: flex; flex-direction: column; gap: 0.25rem; }

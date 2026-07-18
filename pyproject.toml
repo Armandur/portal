@@ -10,4 +10,6 @@ dependencies = [
     "markdown>=3.6",
     "nh3>=0.3.6",
     "pygments>=2.20.0",
+    "bleach>=6.4.0",
+    "pymdown-extensions>=11.0.1",
 ]
