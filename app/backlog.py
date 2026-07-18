@@ -9,6 +9,7 @@ var.
 
 import json
 import subprocess
+import threading
 import time
 
 import bleach
@@ -70,6 +71,9 @@ def _plaintext(html: str) -> str:
 
 _cache: dict = {"at": 0.0, "data": None}
 _CACHE_TTL = 15.0
+# list_todos är sync -> FastAPI-threadpool. Låset serialiserar cache-miss så
+# bara en tråd startar backlog-CLI:t; övriga väntar och får det färska svaret.
+_cache_lock = threading.Lock()
 
 
 def _run_list() -> tuple[list[dict], bool]:
@@ -159,21 +163,27 @@ def open_todos() -> dict:
     if _cache["data"] is not None and now - _cache["at"] < _CACHE_TTL:
         return _cache["data"]
 
-    try:
-        tasks, truncated = _run_list()
-        projects = _group(tasks)
-        data = {"available": True, "error": None, "truncated": truncated, "projects": projects}
-    except FileNotFoundError:
-        data = {"available": False, "error": "backlog-binären hittas inte", "truncated": False, "projects": []}
-    except (
-        subprocess.TimeoutExpired, RuntimeError, json.JSONDecodeError,
-        KeyError, AttributeError, TypeError, ValueError,
-    ) as exc:
-        # AttributeError/TypeError: t.ex. om backlog ändrar JSON-formen så att
-        # ett fält har oväntad typ i _shape/_group. ValueError: oväntad uppackning.
-        # Vyn ska aldrig ge 500 - alltid ett giltigt {available: false}-svar.
-        data = {"available": False, "error": str(exc), "truncated": False, "projects": []}
+    with _cache_lock:
+        # Dubbelkoll: en annan tråd kan ha fyllt cachen medan vi väntade på låset.
+        now = time.monotonic()
+        if _cache["data"] is not None and now - _cache["at"] < _CACHE_TTL:
+            return _cache["data"]
 
-    _cache["at"] = now
-    _cache["data"] = data
-    return data
+        try:
+            tasks, truncated = _run_list()
+            projects = _group(tasks)
+            data = {"available": True, "error": None, "truncated": truncated, "projects": projects}
+        except FileNotFoundError:
+            data = {"available": False, "error": "backlog-binären hittas inte", "truncated": False, "projects": []}
+        except (
+            subprocess.TimeoutExpired, RuntimeError, json.JSONDecodeError,
+            KeyError, AttributeError, TypeError, ValueError,
+        ) as exc:
+            # AttributeError/TypeError: t.ex. om backlog ändrar JSON-formen så att
+            # ett fält har oväntad typ i _shape/_group. ValueError: oväntad uppackning.
+            # Vyn ska aldrig ge 500 - alltid ett giltigt {available: false}-svar.
+            data = {"available": False, "error": str(exc), "truncated": False, "projects": []}
+
+        _cache["at"] = now
+        _cache["data"] = data
+        return data
