@@ -17,6 +17,9 @@ SHARE_TTL_MINUTES = int(os.environ.get("PORTAL_SHARE_TTL", "120"))
 # Maxstorlek på en delad fil (base64 skickas i JSON, så håll den rimlig)
 SHARE_MAX_BYTES = int(os.environ.get("PORTAL_SHARE_MAX_BYTES", str(25 * 1024 * 1024)))
 
+# Maxstorlek på ett namngivet temas tokens_css (tema-buildern)
+THEME_MAX_BYTES = int(os.environ.get("PORTAL_THEME_MAX_BYTES", str(64 * 1024)))
+
 # Liggarfilen som portalen auto-genererar (bakåtkompatibilitet med gamla flöden)
 LEDGER_PATH = Path(
     os.environ.get("PORTAL_LEDGER_PATH", Path.home() / ".claude" / "running-services.md")

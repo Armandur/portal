@@ -80,6 +80,17 @@
           </div>
           <pre><code id="css-out"></code></pre>
         </section>
+
+        <section>
+          <h2>Sparade teman</h2>
+          <p class="muted">Spara temat med ett namn så kan Claude hämta det via en URL - eller ladda om ett sparat tema för att redigera vidare.</p>
+          <div class="save-row">
+            <input type="text" id="theme-name" placeholder="tema-namn (a-z, 0-9, -)" aria-label="Tema-namn">
+            <button id="save-theme">Spara</button>
+          </div>
+          <p id="save-msg" class="save-msg"></p>
+          <ul id="theme-list" class="theme-list"></ul>
+        </section>
       </div>
     </div>
   </main>
@@ -88,6 +99,7 @@
     <small>Designen ligger i URL:en - dela eller bokmärk länken för att återöppna exakt samma tema.</small>
   </footer>
 
+  <script src="/static/utils.js"></script>
   <script src="/static/vendor/coloris/coloris.min.js"></script>
   <script src="/static/vendor/iro/iro.min.js"></script>
   <script src="/static/theme/color.js"></script>

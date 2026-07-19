@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS shares (
     created_at TEXT NOT NULL,
     expires_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS themes (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    spec TEXT NOT NULL,
+    tokens_css TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -311,3 +320,55 @@ def clean_expired_shares() -> int:
     for uid in expired:
         shutil.rmtree(_share_dir(uid), ignore_errors=True)
     return len(expired)
+
+
+# --- Namngivna teman (tema-buildern) -----------------------------------------
+
+
+def list_themes() -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM themes ORDER BY name").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_theme(name: str) -> dict | None:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM themes WHERE name = ?", (name,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def upsert_theme(name: str, spec: str, tokens_css: str) -> dict:
+    """Skapar temat, eller uppdaterar spec/tokens_css om namnet redan finns
+    (created_at behålls vid uppdatering)."""
+    ts = now_iso()
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO themes (name, spec, tokens_css, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+                   spec = excluded.spec,
+                   tokens_css = excluded.tokens_css,
+                   updated_at = excluded.updated_at""",
+            (name, spec, tokens_css, ts, ts),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_theme(name)
+
+
+def delete_theme(name: str) -> bool:
+    conn = get_conn()
+    try:
+        cur = conn.execute("DELETE FROM themes WHERE name = ?", (name,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()

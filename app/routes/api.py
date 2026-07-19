@@ -1,7 +1,8 @@
-"""JSON-API för tjänsteregistret, portverktyget och delningar."""
+"""JSON-API för tjänsteregistret, portverktyget, delningar och teman."""
 
 import base64
 import binascii
+import json
 import mimetypes
 import os
 import secrets
@@ -9,13 +10,14 @@ import sqlite3
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app import backlog
 from app import database as db
 from app.config import (
     PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL, PORTAL_PORT,
-    SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES,
+    SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES, THEME_MAX_BYTES,
 )
 from app.ledger import write_ledger
 from app.ports import find_free_port, scan_listening_ports, service_status
@@ -58,6 +60,12 @@ class ShareIn(BaseModel):
     content_type: str | None = None
     description: str | None = None
     ttl_minutes: int = SHARE_TTL_MINUTES
+
+
+class ThemeIn(BaseModel):
+    name: str
+    spec: dict
+    tokens_css: str
 
 
 def _with_status(svc: dict, listening: dict) -> dict:
@@ -251,3 +259,54 @@ def delete_share(uid: str):
     if not db.delete_share(uid):
         raise HTTPException(404, f"Ingen delning med id '{uid}' finns.")
     return {"status": "borttagen", "uid": uid}
+
+
+def _theme_out(theme: dict) -> dict:
+    out = dict(theme)
+    out["spec"] = json.loads(theme["spec"])
+    out["tokens_url"] = f"{PORTAL_BASE_URL}/api/themes/{quote(theme['name'])}/tokens.css"
+    return out
+
+
+@router.get("/themes")
+def list_themes():
+    return [_theme_out(t) for t in db.list_themes()]
+
+
+@router.post("/themes")
+def create_theme(body: ThemeIn):
+    if not db.valid_slug(body.name):
+        raise HTTPException(
+            400, "Ogiltigt namn: använd bara små bokstäver a-z, siffror och bindestreck."
+        )
+    if not body.tokens_css:
+        raise HTTPException(400, "tokens_css saknas.")
+    if len(body.tokens_css.encode("utf-8")) > THEME_MAX_BYTES:
+        raise HTTPException(
+            413, f"tokens_css är för stor (max {THEME_MAX_BYTES // 1024} KB)."
+        )
+    theme = db.upsert_theme(body.name, json.dumps(body.spec), body.tokens_css)
+    return _theme_out(theme)
+
+
+@router.get("/themes/{name}")
+def get_theme(name: str):
+    theme = db.get_theme(name)
+    if theme is None:
+        raise HTTPException(404, f"Inget tema med namnet '{name}' finns.")
+    return _theme_out(theme)
+
+
+@router.get("/themes/{name}/tokens.css")
+def get_theme_tokens_css(name: str):
+    theme = db.get_theme(name)
+    if theme is None:
+        raise HTTPException(404, f"Inget tema med namnet '{name}' finns.")
+    return Response(content=theme["tokens_css"], media_type="text/css")
+
+
+@router.delete("/themes/{name}")
+def delete_theme(name: str):
+    if not db.delete_theme(name):
+        raise HTTPException(404, f"Inget tema med namnet '{name}' finns.")
+    return {"status": "borttagen", "name": name}

@@ -252,6 +252,91 @@ function initWheel(base, scheme) {
   });
 }
 
+// --- Sparade teman (DB via /api/themes) -----------------------------------
+
+let _themeSpecs = {}; // namn -> spec, för laddning utan extra hämtning
+
+async function loadThemeList() {
+  try {
+    renderThemeList(await apiFetch("/api/themes"));
+  } catch (e) {
+    $("theme-list").innerHTML =
+      `<li class="muted">Kunde inte hämta teman: ${escapeHtml(e.message)}</li>`;
+  }
+}
+
+function renderThemeList(themes) {
+  _themeSpecs = {};
+  const list = $("theme-list");
+  if (!themes.length) {
+    list.innerHTML = `<li class="muted">Inga sparade teman än.</li>`;
+    return;
+  }
+  list.innerHTML = themes
+    .map((t) => {
+      _themeSpecs[t.name] = t.spec;
+      const url = escapeHtml(t.tokens_url);
+      const n = escapeHtml(t.name);
+      return `<li class="theme-item">
+        <span class="theme-name">${n}</span>
+        <a class="theme-url" href="${url}" target="_blank" rel="noopener">tokens.css</a>
+        <span class="theme-actions">
+          <button class="secondary outline" data-load="${n}">Ladda</button>
+          <button class="secondary outline" data-del="${n}">Radera</button>
+        </span>
+      </li>`;
+    })
+    .join("");
+}
+
+async function saveTheme() {
+  const name = $("theme-name").value.trim().toLowerCase();
+  const msg = $("save-msg");
+  if (!/^[a-z0-9-]+$/.test(name)) {
+    msg.textContent = "Ogiltigt namn: bara a-z, 0-9 och bindestreck.";
+    msg.className = "save-msg err";
+    return;
+  }
+  try {
+    const theme = await apiFetch("/api/themes", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        spec: currentInputs(),
+        tokens_css: $("css-out").textContent,
+      }),
+    });
+    msg.innerHTML = `Sparat. Claude hämtar via <a href="${escapeHtml(theme.tokens_url)}" target="_blank" rel="noopener">${escapeHtml(theme.tokens_url)}</a>`;
+    msg.className = "save-msg ok";
+    loadThemeList();
+  } catch (e) {
+    msg.textContent = "Kunde inte spara: " + e.message;
+    msg.className = "save-msg err";
+  }
+}
+
+function applyTheme(name) {
+  const spec = _themeSpecs[name];
+  if (!spec) return;
+  applyState({ ...DEFAULTS, ...spec });
+  if (window.Coloris) {
+    for (const id of COLOR_IDS) $(id).dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  refresh();
+  $("theme-name").value = name;
+}
+
+async function deleteTheme(name) {
+  try {
+    await apiFetch("/api/themes/" + encodeURIComponent(name), { method: "DELETE" });
+    loadThemeList();
+  } catch (e) {
+    const msg = $("save-msg");
+    msg.textContent = "Kunde inte radera: " + e.message;
+    msg.className = "save-msg err";
+  }
+}
+
 const COLOR_IDS = ["base", ...STATUS_KEYS];
 
 function applyState(s) {
@@ -299,6 +384,19 @@ function init() {
     if (window.Coloris) $("base").dispatchEvent(new Event("input", { bubbles: true }));
     refresh();
   });
+
+  // Sparade teman
+  $("save-theme").addEventListener("click", saveTheme);
+  $("theme-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); saveTheme(); }
+  });
+  $("theme-list").addEventListener("click", (e) => {
+    const load = e.target.closest("[data-load]");
+    const del = e.target.closest("[data-del]");
+    if (load) applyTheme(load.dataset.load);
+    else if (del) deleteTheme(del.dataset.del);
+  });
+  loadThemeList();
 
   $("copy-css").addEventListener("click", async () => {
     try {

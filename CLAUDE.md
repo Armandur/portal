@@ -25,14 +25,16 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/config.py` - sökvägar, portar, TTL. Allt överridbart via env
   (se .env.example).
 - `app/database.py` - schema, init_db() med ALTER TABLE-guard-mönster
-  (`_ensure_column`), CRUD för services, reservations och shares
-  (delningar; äger både rad och fil i `data/shares/<uid>/`).
+  (`_ensure_column`), CRUD för services, reservations, shares
+  (delningar; äger både rad och fil i `data/shares/<uid>/`) och themes
+  (namngivna teman från tema-buildern; bara rad, ingen fil).
 - `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
   statusbedömning, reservationsstädning.
 - `app/ledger.py` - genererar och importerar
   `~/.claude/running-services.md`.
 - `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
-  (/api/shares).
+  (/api/shares) och tema-endpoints (/api/themes; `.../tokens.css` serverar
+  rå text/css).
 - `app/routes/pages.py` - kortvyn (/), tema-buildern (/tema),
   dokumentationsvyn (/docs/{name}) och delningsservering
   (/share/{uid}/{filnamn}; .md renderas som läsvy).
@@ -143,9 +145,19 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   som är ofarligt även för projekt utan växel); kryssruta av ger 2-vägs
   (enbart prefers-color-scheme). **State ligger i
   URL:en** (base/scheme/status/prefix/tw som query) så en design är
-  delbar/bokmärkbar och kan återöppnas exakt - samma mekanism tänkt för att
-  Claude ska kunna föreslå ett tema via en färdig builder-länk. Ingen
-  persistens/DB ännu (namngivna teman är en senare inkrement).
+  delbar/bokmärkbar och kan återöppnas exakt - samma mekanism används för att
+  Claude ska kunna föreslå ett tema via en färdig builder-länk.
+- **Namngivna teman (`/api/themes`).** Persistens + round-trip till Claude:
+  buildern har "Spara som..." som POST:ar `{name, spec, tokens_css}` till
+  `/api/themes` (klienten skickar den FÄRDIGGENERERADE CSS:en - ingen
+  färgmatte i Python, JS är enda sanningskällan). Egen `themes`-tabell (bara
+  rad, ingen fil, ingen TTL); `name` är en slug (UNIQUE), upsert via
+  `ON CONFLICT(name)`. `GET /api/themes/{name}/tokens.css` serverar den
+  lagrade CSS:en som **rå text/css** (inte text/html - no-auth, får inte bli
+  XSS) - det är den URL:en Claude WebFetch:ar för att hämta ett tema Rasmus
+  designat. `spec` (JSON) lagras bara för att kunna ladda om temat i buildern
+  för redigering; `tokens_css` är den auktoritativa artefakten. Buildern
+  listar/laddar/raderar teman via samma API.
 - **Länkar alltid till http://ubuntu-ai:PORT** (config.SERVICE_HOST),
   aldrig localhost - användaren når VM:en via hostnamn/Tailscale.
 - Portalen registrerar sig själv vid start (name "portal", pid
