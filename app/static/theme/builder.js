@@ -12,7 +12,7 @@ const DEFAULTS = {
   danger: "#b5342f",
   marker: "#d94f2b",
   prefix: "svk",
-  tw: "0",
+  tw: "1",
 };
 
 const STATUS_KEYS = ["ok", "warn", "danger", "marker"];
@@ -185,13 +185,71 @@ function currentInputs() {
   };
 }
 
-function refresh() {
+// Uppdaterar preview/export/swatches ur formulärets värden (rör inte hjulet).
+function render() {
   const s = currentInputs();
   writeState(s);
   const spec = buildSpec(s);
   renderSchemes(s.base, s.scheme);
   $("preview").innerHTML = renderPreview(spec, "light") + renderPreview(spec, "dark");
   $("css-out").textContent = generateCss(spec);
+}
+
+// Full uppdatering vid formulärändring: rendera OCH spegla in i hjulet.
+function refresh() {
+  render();
+  syncWheelFromInputs();
+}
+
+// --- iro.js-hjul ----------------------------------------------------------
+
+let wheel = null;
+let syncingWheel = false; // hindrar återkoppling när vi själva sätter färger
+
+function syncWheelFromInputs() {
+  if (!wheel) return;
+  const s = currentInputs();
+  syncingWheel = true;
+  wheel.setColors(C.harmony(s.base, s.scheme));
+  syncingWheel = false;
+}
+
+// Vid drag: den gripna (aktiva) punkten blir accenten, övriga sätts till
+// schemats markörer. Vi rör inte den aktiva punkten (den följer pekaren) -
+// så ingen kamp mot dragrörelsen.
+function onWheelInput() {
+  if (syncingWheel || !wheel) return;
+  const base = wheel.color.hexString;
+  const activeIdx = wheel.color.index;
+  const markers = C.harmony(base, $("scheme").value).slice(1);
+  syncingWheel = true;
+  let mi = 0;
+  wheel.colors.forEach((col, idx) => {
+    if (idx === activeIdx) return;
+    if (mi < markers.length) col.hexString = markers[mi++];
+  });
+  syncingWheel = false;
+  $("base").value = base;
+  render();
+}
+
+function initWheel(base, scheme) {
+  if (!window.iro) return; // utan iro faller vi tillbaka på Coloris + swatches
+  wheel = new iro.ColorPicker("#wheel", {
+    width: 190,
+    colors: C.harmony(base, scheme),
+    layout: [{ component: iro.ui.Wheel }],
+    handleRadius: 7,
+    activeHandleRadius: 11,
+    borderWidth: 1,
+    borderColor: "rgba(128,128,128,0.4)",
+  });
+  wheel.on("input:change", onWheelInput);
+  // Vid drag-slut: spegla in värdet i Coloris så dess miniatyr inte blir stale
+  // (säkert här - draget är över, ingen kamp mot pekaren).
+  wheel.on("input:end", () => {
+    if (window.Coloris) $("base").dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 const COLOR_IDS = ["base", ...STATUS_KEYS];
@@ -205,12 +263,20 @@ function applyState(s) {
 }
 
 function init() {
-  applyState(readState());
+  const s0 = readState();
+  applyState(s0);
+  initWheel(s0.base, s0.scheme);
 
   // Coloris (Rasmus standard-väljare) om laddad; annars faller vi tillbaka på
   // native <input type=color> så fälten fungerar även utan Coloris.
   if (window.Coloris) {
     Coloris({ themeMode: "auto", format: "hex", alpha: false });
+    // Coloris läser fältens värde vid init; URL-state kan ha satt ett annat
+    // värde efter det, så miniatyrerna måste speglas in (annars visar de
+    // HTML-defaulten). Sker före våra egna input-lyssnare -> ingen extra refresh.
+    for (const id of COLOR_IDS) {
+      $(id).dispatchEvent(new Event("input", { bubbles: true }));
+    }
   } else {
     for (const id of COLOR_IDS) $(id).type = "color";
   }

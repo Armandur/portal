@@ -48,8 +48,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
   egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.
   `theme/` - tema-buildern: color.js (ren färgmatematik: konvertering,
-  harmoni, ljus->mörk-derivering, WCAG), builder.js (UI/preview/export/
-  URL-state), builder.css. `vendor/coloris/` - self-hostad Coloris-väljare.
+  OKLCH, RYB-nyanswarp, harmoni, ljus->mörk-derivering, WCAG), builder.js
+  (UI/preview/export/URL-state/iro-hjul), builder.css. `vendor/coloris/` -
+  self-hostad Coloris-väljare, `vendor/iro/` - self-hostad iro.js (MPL-2.0)
+  för färghjulet.
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
   register/port/list även share/unshare/shares för fildelning.
 - `deploy/portal.service` - systemd user unit (primär driftväg).
@@ -121,13 +123,25 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   befintligt tema). Väljer accent + statusfärger (ok/warn/danger/marker),
   ett harmonischema för att utforska accenten, och exporterar `--<prefix>-*`
   (default `svk`) + hela remappade `--pico-primary-background`-familjen så
-  Pico-knappar faktiskt får accenten. All färgmatematik ligger i color.js
-  (enda sanningskällan - ingen Python-motsvarighet); builder.js ritar
-  live-preview i ljust+mörkt, WCAG-avläsning och bygger CSS-texten.
+  Pico-knappar faktiskt får accenten (inkl. `--pico-primary-inverse` via ett
+  härlett `--<prefix>-accent-ink` så knapptexten blir läsbar även på ljus
+  accent). All färgmatematik ligger i color.js (enda sanningskällan - ingen
+  Python-motsvarighet); builder.js ritar live-preview i ljust+mörkt,
+  WCAG-avläsning och bygger CSS-texten.
+  **Harmoni räknas i OKLCH på en RYB-nyansaxel** (Adobe Color-metodik):
+  rotationen sker på Ittens artistiska hjul (så rödas komplement blir grönt,
+  inte cyan) men färgerna byggs i OKLCH med basens L och C konstanta, så hela
+  paletten blir perceptuellt jämn i ljushet/mättnad. Ur-gamut-nyanser
+  gamut-mappas genom att sänka C (binärsök) med nyans+ljushet bevarade -
+  aldrig per-kanal-klamp (som förvrider nyansen). **Interaktivt hjul** via
+  self-hostad iro.js: den aktiva (större) punkten är accenten, övriga
+  markörer följer schemat. Drag flödar bas -> markörer -> export i lockstep;
+  vid drag rörs bara icke-aktiva punkter (ingen kamp mot pekaren).
   **Mörkvarianter härleds** ur ljusfärgen (behåll nyans, dämpa mättnad,
-  lyft ljushet) - reverse-engineerat ur befintliga tokens.css-par. **2-vägs
-  som default** (enbart prefers-color-scheme, Rasmus konvention); kryssruta
-  ger 3-vägs (även `data-theme` för manuell temaväxel). **State ligger i
+  lyft ljushet) - reverse-engineerat ur befintliga tokens.css-par. **3-vägs
+  som default** (även `data-theme`, funkar med manuell temaväxel - superset
+  som är ofarligt även för projekt utan växel); kryssruta av ger 2-vägs
+  (enbart prefers-color-scheme). **State ligger i
   URL:en** (base/scheme/status/prefix/tw som query) så en design är
   delbar/bokmärkbar och kan återöppnas exakt - samma mekanism tänkt för att
   Claude ska kunna föreslå ett tema via en färdig builder-länk. Ingen

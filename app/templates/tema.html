@@ -37,9 +37,13 @@
             <option value="split-complement">Split-komplement</option>
             <option value="analogous">Analog</option>
             <option value="triad">Triad</option>
-            <option value="tetrad">Tetrad</option>
+            <option value="square">Fyrkant (square)</option>
+            <option value="rectangle">Rektangel</option>
+            <option value="double-split">Dubbel split-komplement</option>
+            <option value="compound">Compound</option>
           </select>
-          <small>Klicka på en nyans för att sätta den som accent.</small>
+          <div class="wheel-wrap"><div id="wheel"></div></div>
+          <small>Dra i hjulet - den aktiva (större) punkten är accenten, övriga följer schemat. Nyanserna räknas i OKLCH på en RYB-axel (som Adobe Color).</small>
           <div class="schemes" id="schemes"></div>
         </div>
 
@@ -58,8 +62,8 @@
         </div>
 
         <div class="field">
-          <label><input type="checkbox" id="threeway"> 3-vägs (stöd manuell temaväxel)</label>
-          <small>Av = enbart <code>prefers-color-scheme</code> (Rasmus default). På = även <code>data-theme</code>.</small>
+          <label><input type="checkbox" id="threeway" checked> 3-vägs (stöd manuell temaväxel)</label>
+          <small>På (standard) = även <code>data-theme</code>, funkar med manuell temaväxel. Av = enbart <code>prefers-color-scheme</code>.</small>
         </div>
       </form>
 
@@ -85,6 +89,7 @@
   </footer>
 
   <script src="/static/vendor/coloris/coloris.min.js"></script>
+  <script src="/static/vendor/iro/iro.min.js"></script>
   <script src="/static/theme/color.js"></script>
   <script src="/static/theme/builder.js"></script>
 </body>
