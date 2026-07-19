@@ -33,8 +33,9 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   `~/.claude/running-services.md`.
 - `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
   (/api/shares).
-- `app/routes/pages.py` - kortvyn (/), dokumentationsvyn (/docs/{name})
-  och delningsservering (/share/{uid}/{filnamn}; .md renderas som läsvy).
+- `app/routes/pages.py` - kortvyn (/), tema-buildern (/tema),
+  dokumentationsvyn (/docs/{name}) och delningsservering
+  (/share/{uid}/{filnamn}; .md renderas som läsvy).
 - `app/share_render.py` - renderar delade .md-filer till självbärande,
   sanerade HTML-läsvyer (inline CSS med portalens palett). render_text_page
   finns för framtida .txt.
@@ -42,9 +43,13 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   Skalar ut till `backlog task list --json` (stabilt gränssnitt, aldrig rå
   SQLite), kort cache, robust felhantering. Portalen äger inga todos - backlog
   skriver, portalen visar (/api/todos, Todos-sektionen på förstasidan).
-- `app/templates/` - index.html (klientrenderad via fetch), docs.html.
+- `app/templates/` - index.html (klientrenderad via fetch), docs.html,
+  tema.html (tema-buildern; fristående sida, ej förstasidans layout).
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
   egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.
+  `theme/` - tema-buildern: color.js (ren färgmatematik: konvertering,
+  harmoni, ljus->mörk-derivering, WCAG), builder.js (UI/preview/export/
+  URL-state), builder.css. `vendor/coloris/` - self-hostad Coloris-väljare.
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
   register/port/list även share/unshare/shares för fildelning.
 - `deploy/portal.service` - systemd user unit (primär driftväg).
@@ -111,6 +116,22 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
   delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`
   räcker. Beräknas vid import i config.py.
+- **Tema-buildern (`/tema`).** Klientside-verktyg som GENERERAR en
+  tokens.css-snutt (komplement till theme-preview-skillen som visar ett
+  befintligt tema). Väljer accent + statusfärger (ok/warn/danger/marker),
+  ett harmonischema för att utforska accenten, och exporterar `--<prefix>-*`
+  (default `svk`) + hela remappade `--pico-primary-background`-familjen så
+  Pico-knappar faktiskt får accenten. All färgmatematik ligger i color.js
+  (enda sanningskällan - ingen Python-motsvarighet); builder.js ritar
+  live-preview i ljust+mörkt, WCAG-avläsning och bygger CSS-texten.
+  **Mörkvarianter härleds** ur ljusfärgen (behåll nyans, dämpa mättnad,
+  lyft ljushet) - reverse-engineerat ur befintliga tokens.css-par. **2-vägs
+  som default** (enbart prefers-color-scheme, Rasmus konvention); kryssruta
+  ger 3-vägs (även `data-theme` för manuell temaväxel). **State ligger i
+  URL:en** (base/scheme/status/prefix/tw som query) så en design är
+  delbar/bokmärkbar och kan återöppnas exakt - samma mekanism tänkt för att
+  Claude ska kunna föreslå ett tema via en färdig builder-länk. Ingen
+  persistens/DB ännu (namngivna teman är en senare inkrement).
 - **Länkar alltid till http://ubuntu-ai:PORT** (config.SERVICE_HOST),
   aldrig localhost - användaren når VM:en via hostnamn/Tailscale.
 - Portalen registrerar sig själv vid start (name "portal", pid

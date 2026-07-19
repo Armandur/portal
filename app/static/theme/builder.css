@@ -1,0 +1,73 @@
+/* Tema-builder-vyns egen layout (ovanpå Pico + portalens tokens.css). */
+
+.tb-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+}
+/* min-width:0 så grid-spåren inte expanderar till <pre>-innehållets
+   min-content (oformaterad tokens.css skulle annars spilla sidbredden). */
+.tb-controls, .tb-output { min-width: 0; }
+@media (min-width: 900px) {
+  .tb-grid { grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); align-items: start; }
+}
+
+.tb-controls .field { margin-bottom: 0.9rem; }
+.tb-controls label { font-weight: 600; font-size: 0.9rem; }
+.tb-controls .field small { display: block; color: var(--pico-muted-color); }
+
+/* Färgfält: väljare + hex-text bredvid varandra */
+.color-field { display: flex; align-items: center; gap: 0.5rem; }
+.color-field input[type="color"] {
+  width: 2.6rem; height: 2.6rem; padding: 0; border-radius: 8px;
+  border: 1px solid var(--pico-muted-border-color); background: none; cursor: pointer;
+}
+.color-field input[type="text"] {
+  margin: 0; font-family: var(--pico-font-family-monospace); text-transform: lowercase;
+}
+
+/* Harmoni-swatches */
+.schemes { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
+.hs {
+  width: 2.2rem; height: 2.2rem; border-radius: 8px; padding: 0; margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15); cursor: pointer;
+}
+.hs:hover { outline: 2px solid var(--pico-primary); outline-offset: 1px; }
+
+/* Preview-panel: ljust + mörkt sida vid sida */
+.preview { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 520px) { .preview { grid-template-columns: 1fr; } }
+
+.pv {
+  border-radius: 12px; padding: 1rem; border: 1px solid var(--pico-muted-border-color);
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+.pv-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+.pv-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.pv-btn {
+  border: none; border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.85rem;
+  font-weight: 600; cursor: default; margin: 0;
+}
+.pv-btn.pv-out { background: transparent; border: 1.5px solid; }
+.pv-link { font-size: 0.85rem; text-decoration: underline; }
+.pv-swatch, .pv-hover { height: 1.4rem; border-radius: 6px; }
+.pv-hover { height: 0.9rem; opacity: 0.9; }
+.pv-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip {
+  font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.5rem;
+  border: 1px solid; border-radius: 999px; background: transparent;
+}
+.pv-wcag { margin: 0; font-size: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.pv-wcag > div { display: flex; justify-content: space-between; gap: 0.5rem; }
+.pv-wcag dt, .pv-wcag dd { margin: 0; }
+.pv-wcag dt { opacity: 0.75; }
+.wc { font-family: var(--pico-font-family-monospace); font-weight: 600; }
+.wc-pass { color: #15a34a; }
+.wc-fail { color: #dc2626; }
+
+/* Export */
+.export-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+#css-out {
+  max-height: 60vh; overflow: auto; font-size: 0.82rem; margin: 0;
+  border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius);
+}

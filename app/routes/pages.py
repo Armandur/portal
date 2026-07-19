@@ -29,6 +29,11 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {})
 
 
+@router.get("/tema", response_class=HTMLResponse)
+def tema(request: Request):
+    return templates.TemplateResponse(request, "tema.html", {})
+
+
 @router.get("/docs/{name}", response_class=HTMLResponse)
 def service_docs(request: Request, name: str):
     svc = db.get_service(name)

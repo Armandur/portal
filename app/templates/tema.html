@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tema-builder - Portal</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/vendor/coloris/coloris.min.css">
+  <link rel="stylesheet" href="/static/theme/builder.css">
+</head>
+<body>
+  <header class="container">
+    <hgroup>
+      <h1>Tema-builder</h1>
+      <p>Generera en <code>tokens.css</code>-snutt (accent + statusfärger, ljust och mörkt) för ett Pico-projekt. <a href="/">Till portalen</a></p>
+    </hgroup>
+  </header>
+
+  <main class="container">
+    <div class="tb-grid">
+      <form class="tb-controls" onsubmit="return false">
+        <div class="field">
+          <label for="base">Accentfärg (bas)</label>
+          <div class="color-field">
+            <input type="text" id="base" value="#2563eb" data-coloris>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="scheme">Harmonischema</label>
+          <select id="scheme">
+            <option value="monochrome">Monokrom</option>
+            <option value="complement">Komplement</option>
+            <option value="split-complement">Split-komplement</option>
+            <option value="analogous">Analog</option>
+            <option value="triad">Triad</option>
+            <option value="tetrad">Tetrad</option>
+          </select>
+          <small>Klicka på en nyans för att sätta den som accent.</small>
+          <div class="schemes" id="schemes"></div>
+        </div>
+
+        <div class="field">
+          <label>Statusfärger</label>
+          <div class="color-field"><input type="text" id="ok" value="#2f8f52" data-coloris><small>ok</small></div>
+          <div class="color-field"><input type="text" id="warn" value="#b5872b" data-coloris><small>warn</small></div>
+          <div class="color-field"><input type="text" id="danger" value="#b5342f" data-coloris><small>danger</small></div>
+          <div class="color-field"><input type="text" id="marker" value="#d94f2b" data-coloris><small>marker</small></div>
+        </div>
+
+        <div class="field">
+          <label for="prefix">Token-prefix</label>
+          <input type="text" id="prefix" value="svk">
+          <small>Ger <code>--svk-accent</code>, <code>--svk-ok</code> osv.</small>
+        </div>
+
+        <div class="field">
+          <label><input type="checkbox" id="threeway"> 3-vägs (stöd manuell temaväxel)</label>
+          <small>Av = enbart <code>prefers-color-scheme</code> (Rasmus default). På = även <code>data-theme</code>.</small>
+        </div>
+      </form>
+
+      <div class="tb-output">
+        <section>
+          <h2>Förhandsvisning</h2>
+          <div class="preview" id="preview"></div>
+        </section>
+
+        <section>
+          <div class="export-head">
+            <h2>tokens.css</h2>
+            <button id="copy-css" class="secondary">Kopiera</button>
+          </div>
+          <pre><code id="css-out"></code></pre>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="container">
+    <small>Designen ligger i URL:en - dela eller bokmärk länken för att återöppna exakt samma tema.</small>
+  </footer>
+
+  <script src="/static/vendor/coloris/coloris.min.js"></script>
+  <script src="/static/theme/color.js"></script>
+  <script src="/static/theme/builder.js"></script>
+</body>
+</html>
