@@ -1,6 +1,6 @@
 # Backlog Export
 
-## [P2][doing] [portal] Tema-round-trip: spara/återför tema till Claude + skill-integration
+## [P2][done] [portal] Tema-round-trip: spara/återför tema till Claude + skill-integration
 
 Sista biten av tema-visionen (ur TASK-118): när ett nytt projekt byggs ska Claude fråga om tema, föreslå en färgkombo som en builder-URL ELLER länka buildern till Rasmus, som designar och FÖR TILLBAKA temat för implementering. URL-state finns redan (delbar/återöppningsbar länk) - det som saknas är återföringsvägen och skill-kopplingen. Steg 1 = designbeslut om mekanismen: (a) paste av tokens.css-text (funkar redan, noll backend), (b) server-endpoint som renderar tokens.css ur query-params så Claude kan WebFetch:a (kräver färgmatte i Python ELLER att klienten POSTar genererad CSS), (c) namngivna teman i DB: buildern POSTar spec+genererad tokens.css, /api/themes/{namn} returnerar den (ingen Python-matte, ger persistens). Sedan skill-integration (theme-preview-skillen eller ny). Inte brådskande men strategiskt nästa steg.
 
