@@ -32,7 +32,7 @@ Skapa >10 done-tasks + en lågprio öppen; bekräfta att den öppna syns i /api/
 
 ---
 
-## [P3][todo] [portal] Stöd flera accentfärger i ett tema (exportera följefärger)
+## [P3][done] [portal] Stöd flera accentfärger i ett tema (exportera följefärger)
 
 Tema-buildern väljer i dag EN accent; harmonischemat/hjulet visar följefärger (komplement/triad osv) i swatchar men de exporteras inte som tokens. Låt ett tema kunna ha mer än en accent: exportera följefärgerna som t.ex. --svk-accent-2/-3 (+ hover/focus/ink och mörkvarianter, samma mönster som --svk-accent) och remappa ev. en sekundär Pico-roll. Öppna frågor: hur många, hur de namnges, och om alla schemats färger ska med eller ett urval. Uppstod ur schema-arbetet 2026-07-19 (TASK-118). Inte brådskande.
 
