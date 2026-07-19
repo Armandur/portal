@@ -144,9 +144,15 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   som default** (även `data-theme`, funkar med manuell temaväxel - superset
   som är ofarligt även för projekt utan växel); kryssruta av ger 2-vägs
   (enbart prefers-color-scheme). **State ligger i
-  URL:en** (base/scheme/status/prefix/tw som query) så en design är
+  URL:en** (base/scheme/status/prefix/tw/comp som query) så en design är
   delbar/bokmärkbar och kan återöppnas exakt - samma mekanism används för att
   Claude ska kunna föreslå ett tema via en färdig builder-länk.
+  **Följefärger (opt-in, kryssruta av som default).** På = schemats övriga
+  nyanser exporteras som extra accenter `--<prefix>-accent-2..N` (full familj:
+  hover/focus/ink + mörkvarianter, samma mönster som huvudaccenten), och
+  Picos `--pico-secondary`-familj remappas till accent-2. Av håller enkla
+  en-accent-teman rena. Genereringen delar `accentFamily()`/`picoRole()` i
+  builder.js.
 - **Namngivna teman (`/api/themes`).** Persistens + round-trip till Claude:
   buildern har "Spara som..." som POST:ar `{name, spec, tokens_css}` till
   `/api/themes` (klienten skickar den FÄRDIGGENERERADE CSS:en - ingen

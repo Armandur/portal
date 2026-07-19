@@ -13,6 +13,7 @@ const DEFAULTS = {
   marker: "#d94f2b",
   prefix: "svk",
   tw: "1",
+  comp: "0",
 };
 
 const STATUS_KEYS = ["ok", "warn", "danger", "marker"];
@@ -48,23 +49,37 @@ function buildSpec(s) {
   spec.accent = { light: s.base, dark: C.deriveDark(s.base) };
   put("accent", s.base);
   for (const k of STATUS_KEYS) put(k, s[k]);
+  // Följefärger (opt-in): schemats övriga nyanser blir extra accenter.
+  spec.companions = [];
+  if (s.comp === "1") {
+    spec.companions = C.harmony(s.base, s.scheme)
+      .slice(1)
+      .map((light) => ({ light, dark: C.deriveDark(light) }));
+  }
   return spec;
 }
 
 // --- tokens.css-generering ------------------------------------------------
 
+// En accentfamilj (accent, -hover, -focus, -ink) för ett läge. suffix är ""
+// för huvudaccenten, "-2"/"-3"... för följefärger.
+function accentFamily(prefix, suffix, hex, mode) {
+  return [
+    `--${prefix}-accent${suffix}: ${hex};`,
+    `--${prefix}-accent${suffix}-hover: ${C.deriveHover(hex, mode)};`,
+    `--${prefix}-accent${suffix}-focus: ${C.focusRgba(hex)};`,
+    // Läsbar knapptext (svart/vitt efter kontrast) - annars behåller Pico
+    // vit --primary-inverse även på en ljus accent.
+    `--${prefix}-accent${suffix}-ink: ${bestText(hex)};`,
+  ];
+}
+
 function accentBlock(spec, mode) {
   const p = spec.prefix;
-  const a = spec.accent[mode];
-  const hover = C.deriveHover(a, mode);
-  const lines = [
-    `--${p}-accent: ${a};`,
-    `--${p}-accent-hover: ${hover};`,
-    `--${p}-accent-focus: ${C.focusRgba(a)};`,
-    // Läsbar knapptext på accenten (svart/vitt efter kontrast) - annars
-    // behåller Pico vit --primary-inverse även på en ljus accent.
-    `--${p}-accent-ink: ${bestText(a)};`,
-  ];
+  const lines = accentFamily(p, "", spec.accent[mode], mode);
+  spec.companions.forEach((c, i) => {
+    lines.push(...accentFamily(p, `-${i + 2}`, c[mode], mode));
+  });
   for (const k of STATUS_KEYS) lines.push(`--${p}-${k}: ${spec.vars[k][mode]};`);
   return lines;
 }
@@ -96,16 +111,19 @@ function generateCss(spec) {
   const picoSel = spec.threeway
     ? `:root:not([data-theme=dark]), :root[data-theme=light], :root[data-theme=dark]`
     : `:root:not([data-theme=dark]), :root[data-theme=dark]`;
-  parts.push(
-    `${picoSel} {\n` +
-      `  --pico-primary: var(--${p}-accent);\n` +
-      `  --pico-primary-hover: var(--${p}-accent-hover);\n` +
-      `  --pico-primary-underline: var(--${p}-accent);\n` +
-      `  --pico-primary-background: var(--${p}-accent);\n` +
-      `  --pico-primary-hover-background: var(--${p}-accent-hover);\n` +
-      `  --pico-primary-inverse: var(--${p}-accent-ink);\n` +
-      `  --pico-primary-focus: var(--${p}-accent-focus);\n}`,
-  );
+  const picoRole = (role, suffix) => [
+    `--pico-${role}: var(--${p}-accent${suffix});`,
+    `--pico-${role}-hover: var(--${p}-accent${suffix}-hover);`,
+    `--pico-${role}-underline: var(--${p}-accent${suffix});`,
+    `--pico-${role}-background: var(--${p}-accent${suffix});`,
+    `--pico-${role}-hover-background: var(--${p}-accent${suffix}-hover);`,
+    `--pico-${role}-inverse: var(--${p}-accent${suffix}-ink);`,
+    `--pico-${role}-focus: var(--${p}-accent${suffix}-focus);`,
+  ];
+  const picoLines = picoRole("primary", "");
+  // Första följefärgen driver Picos sekundär-roll.
+  if (spec.companions.length) picoLines.push(...picoRole("secondary", "-2"));
+  parts.push(`${picoSel} {\n${indent(picoLines, "  ")}\n}`);
   return parts.join("\n\n") + "\n";
 }
 
@@ -144,6 +162,9 @@ function renderPreview(spec, mode) {
       <div class="pv-label">${mode === "light" ? "Ljust" : "Mörkt"}</div>
       <div class="pv-row">
         <button class="pv-btn" style="background:${a};color:${btnText}">Primär</button>
+        ${spec.companions.length
+          ? `<button class="pv-btn" style="background:${spec.companions[0][mode]};color:${bestText(spec.companions[0][mode])}">Sekundär</button>`
+          : ""}
         <button class="pv-btn pv-out" style="color:${a};border-color:${a}">Kontur</button>
         <a href="#" class="pv-link" style="color:${a}" onclick="return false">En länk</a>
       </div>
@@ -182,6 +203,7 @@ function currentInputs() {
     marker: $("marker").value,
     prefix: $("prefix").value.trim() || "svk",
     tw: $("threeway").checked ? "1" : "0",
+    comp: $("companions").checked ? "1" : "0",
   };
 }
 
@@ -345,6 +367,7 @@ function applyState(s) {
   for (const k of STATUS_KEYS) $(k).value = s[k];
   $("prefix").value = s.prefix;
   $("threeway").checked = s.tw === "1";
+  $("companions").checked = s.comp === "1";
 }
 
 function init() {
@@ -375,6 +398,7 @@ function init() {
   $("scheme").addEventListener("change", refresh);
   $("prefix").addEventListener("input", refresh);
   $("threeway").addEventListener("change", refresh);
+  $("companions").addEventListener("change", refresh);
 
   // Klick på harmoni-swatch -> sätt som accent
   $("schemes").addEventListener("click", (e) => {
