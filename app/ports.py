@@ -1,13 +1,24 @@
 """Portlogik: skanna lyssnande portar via ss, hitta ledig port, statusbedömning."""
 
+import os
 import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 
 from app.config import PORT_RANGE_END, PORT_RANGE_START, RESERVATION_TTL_MINUTES
-from app.database import get_conn, now_iso
+from app.database import (
+    delete_dead_ephemeral_candidate, get_conn, list_services, now_iso,
+)
 
 _PROC_RE = re.compile(r'\("([^"]+)",pid=(\d+)')
+
+
+class _ListeningPorts(dict):
+    """Portresultat med signal om ss-scanningen var tillförlitlig."""
+
+    def __init__(self, *args, reliable: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reliable = reliable
 
 
 def scan_listening_ports() -> dict[int, dict]:
@@ -17,13 +28,16 @@ def scan_listening_ports() -> dict[int, dict]:
     då blir listorna tomma. IPv4/IPv6-dubbletter slås ihop.
     """
     try:
-        out = subprocess.run(
+        completed = subprocess.run(
             ["ss", "-tlnp"], capture_output=True, text=True, timeout=10
-        ).stdout
+        )
     except (OSError, subprocess.TimeoutExpired):
-        return {}
+        return _ListeningPorts(reliable=False)
+    if completed.returncode != 0:
+        return _ListeningPorts(reliable=False)
 
-    result: dict[int, dict] = {}
+    result: dict[int, dict] = _ListeningPorts()
+    out = completed.stdout
     for line in out.splitlines():
         parts = line.split()
         if len(parts) < 4 or parts[0] != "LISTEN":
@@ -102,14 +116,72 @@ def find_free_port(
         conn.close()
 
 
-def service_status(service: dict, listening: dict[int, dict]) -> str:
-    """'docs' om posten saknar port (ren dokumentationspost),
+def _pid_is_alive(pid: int | None) -> bool:
+    """Returnerar True när PID lever eller inte kan kontrolleras säkert."""
+    if pid is None or pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def clean_dead_ephemeral_services(
+    listening: dict[int, dict] | None = None,
+) -> list[str]:
+    """Tar bort döda efemära poster och skriver om liggaren vid ändring."""
+    listening = scan_listening_ports() if listening is None else listening
+    if not getattr(listening, "reliable", True):
+        return []
+    removed = []
+    for service in list_services():
+        port = service.get("port")
+        if (
+            service.get("kind") == "ephemeral"
+            and port is not None
+            and port not in listening
+            and not _pid_is_alive(service.get("pid"))
+            and delete_dead_ephemeral_candidate(
+                service["name"], port, service["pid"]
+            )
+        ):
+            removed.append(service["name"])
+    if removed:
+        from app.ledger import write_ledger
+        write_ledger()
+    return removed
+
+
+def service_status(
+    service: dict,
+    listening: dict[int, dict],
+    supervisor_status: str | None = None,
+) -> str:
+    """Kombinerar supervisor-, port- och PID-status.
+
+    'docs' om en efemär post saknar port,
     'up' om porten lyssnar och PID okänd eller matchar,
     'conflict' om porten lyssnar med annan känd PID än den registrerade,
     'down' om inget lyssnar på porten."""
-    if service.get("port") is None:
+    port = service.get("port")
+    entry = listening.get(port) if port is not None else None
+    if service.get("kind") == "systemd":
+        state = supervisor_status or "unknown"
+        if state == "active":
+            return "up" if port is None or entry is not None else "drift"
+        if state == "activating":
+            return "starting"
+        if state == "deactivating":
+            return "stopping"
+        if state in {"inactive", "failed"}:
+            return "drift" if entry is not None else "down"
+        return "unknown"
+
+    if port is None:
         return "docs"
-    entry = listening.get(service["port"])
     if entry is None:
         return "down"
     pids = entry.get("pids") or []

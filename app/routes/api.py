@@ -7,6 +7,7 @@ import mimetypes
 import os
 import secrets
 import sqlite3
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
@@ -20,7 +21,14 @@ from app.config import (
     SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES, THEME_MAX_BYTES,
 )
 from app.ledger import write_ledger
-from app.ports import find_free_port, scan_listening_ports, service_status
+from app.supervisor import (
+    SupervisorError, control_systemd, portal_managed_systemd_unit,
+    systemd_unit_state, systemd_unit_states, valid_systemd_unit,
+)
+from app.ports import (
+    clean_dead_ephemeral_services, find_free_port, scan_listening_ports,
+    service_status,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -35,6 +43,9 @@ class ServiceIn(BaseModel):
     docs_path: str | None = None
     docs_md: str | None = None
     started_by: str | None = None
+    kind: Literal["ephemeral", "systemd", "docker"] = "ephemeral"
+    unit: str | None = None
+    autostart: bool = False
 
 
 class ServicePatch(BaseModel):
@@ -46,6 +57,9 @@ class ServicePatch(BaseModel):
     docs_path: str | None = None
     docs_md: str | None = None
     started_by: str | None = None
+    kind: Literal["ephemeral", "systemd", "docker"] | None = None
+    unit: str | None = None
+    autostart: bool | None = None
 
 
 class ReserveIn(BaseModel):
@@ -68,9 +82,26 @@ class ThemeIn(BaseModel):
     tokens_css: str
 
 
-def _with_status(svc: dict, listening: dict) -> dict:
+def _systemd_states(services: list[dict]) -> dict[str, str]:
+    return systemd_unit_states([
+        service["unit"]
+        for service in services
+        if service.get("kind") == "systemd" and service.get("unit")
+    ])
+
+
+def _with_status(
+    svc: dict, listening: dict, supervisor_states: dict[str, str] | None = None
+) -> dict:
     out = dict(svc)
-    out["status"] = service_status(svc, listening)
+    state = None
+    if svc.get("kind") == "systemd":
+        state = (supervisor_states or {}).get(svc.get("unit"), "unknown")
+        out["supervisor_status"] = state
+        out["controllable"] = portal_managed_systemd_unit(svc.get("unit"))
+    else:
+        out["controllable"] = False
+    out["status"] = service_status(svc, listening, state)
     if svc.get("port") is None:
         # Portlös dokumentationspost: länka till dokumentationssidan
         out["url"] = f"http://{SERVICE_HOST}:{PORTAL_PORT}/docs/{svc['name']}"
@@ -99,7 +130,10 @@ def list_todos():
 @router.get("/services")
 def list_services():
     listening = scan_listening_ports()
-    return [_with_status(s, listening) for s in db.list_services()]
+    clean_dead_ephemeral_services(listening)
+    services = db.list_services()
+    states = _systemd_states(services)
+    return [_with_status(s, listening, states) for s in services]
 
 
 @router.get("/services/{name}")
@@ -107,7 +141,7 @@ def get_service(name: str):
     svc = db.get_service(name)
     if svc is None:
         raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
-    return _with_status(svc, scan_listening_ports())
+    return _with_status(svc, scan_listening_ports(), _systemd_states([svc]))
 
 
 @router.post("/services", status_code=201)
@@ -117,7 +151,7 @@ def create_service(body: ServiceIn):
             400, "Ogiltigt namn: använd bara små bokstäver a-z, siffror och bindestreck."
         )
     if body.port is None:
-        if not (body.docs_path or body.docs_md):
+        if body.kind == "ephemeral" and not (body.docs_path or body.docs_md):
             raise HTTPException(
                 400,
                 "Registrering utan port kräver dokumentation: "
@@ -139,7 +173,7 @@ def create_service(body: ServiceIn):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Namn eller port är redan registrerat.")
     write_ledger()
-    return _with_status(svc, scan_listening_ports())
+    return _with_status(svc, scan_listening_ports(), _systemd_states([svc]))
 
 
 @router.patch("/services/{name}")
@@ -147,6 +181,8 @@ def update_service(name: str, body: ServicePatch):
     if db.get_service(name) is None:
         raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
     fields = body.model_dump(exclude_unset=True)
+    if "kind" in fields and fields["kind"] is None:
+        raise HTTPException(400, "Tjänsttyp får inte vara null.")
     if "port" in fields and fields["port"] is not None:
         _validate_port(fields["port"])
         other = db.get_service_by_port(fields["port"])
@@ -159,9 +195,55 @@ def update_service(name: str, body: ServicePatch):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Uppdateringen krockar med en befintlig tjänst.")
     write_ledger()
-    return _with_status(svc, scan_listening_ports())
+    return _with_status(svc, scan_listening_ports(), _systemd_states([svc]))
 
 
+
+def _control_service(name: str, action: str):
+    svc = db.get_service(name)
+    if svc is None:
+        raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
+    if svc.get("kind") != "systemd":
+        raise HTTPException(400, "Tjänsten hanteras inte av systemd.")
+    unit = svc.get("unit")
+    if not valid_systemd_unit(unit):
+        raise HTTPException(400, "Tjänsten saknar ett giltigt systemd-unitnamn.")
+    if not portal_managed_systemd_unit(unit):
+        raise HTTPException(400, "Systemd-uniten är inte lokalt installerad av svc install.")
+    try:
+        control_systemd(action, unit)
+    except SupervisorError:
+        verb = "starta" if action == "start" else "stoppa"
+        raise HTTPException(502, f"Systemd kunde inte {verb} tjänsten.")
+    state = systemd_unit_state(unit)
+    result = _with_status(
+        db.get_service(name), scan_listening_ports(), {unit: state}
+    )
+    result["action"] = action
+    if svc.get("port") is None:
+        result["status"] = {
+            "active": "up",
+            "activating": "starting",
+            "inactive": "down",
+            "failed": "down",
+        }.get(result["supervisor_status"], "unknown")
+    elif (
+        action == "start"
+        and result["status"] in {"down", "drift"}
+        and result["supervisor_status"] in {"active", "activating"}
+    ):
+        result["status"] = "starting"
+    return result
+
+
+@router.post("/services/{name}/start")
+def start_service(name: str):
+    return _control_service(name, "start")
+
+
+@router.post("/services/{name}/stop")
+def stop_service(name: str):
+    return _control_service(name, "stop")
 @router.delete("/services/{name}")
 def delete_service(name: str):
     if not db.delete_service(name):
@@ -175,6 +257,7 @@ def list_ports():
     listening = scan_listening_ports()
     services = db.list_services()
     by_port = {s["port"]: s for s in services}
+    states = _systemd_states(services)
     ports = []
     for port in sorted(listening):
         entry = listening[port]
@@ -189,7 +272,9 @@ def list_ports():
         })
     return {
         "listening": ports,
-        "services": [_with_status(s, listening) for s in services],
+        "services": [
+            _with_status(s, listening, states) for s in services
+        ],
     }
 
 

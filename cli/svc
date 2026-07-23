@@ -9,14 +9,18 @@ import argparse
 import base64
 import json
 import os
+import re
+import subprocess
+import tempfile
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 BASE_URL = os.environ.get("PORTAL_URL", "http://127.0.0.1:8890").rstrip("/")
 
 
-def _request(method, path, body=None):
+def _request(method, path, body=None, not_found_none=False):
     url = BASE_URL + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(
@@ -27,6 +31,8 @@ def _request(method, path, body=None):
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
+        if e.code == 404 and not_found_none:
+            return None
         try:
             detail = json.loads(e.read().decode("utf-8")).get("detail", str(e))
         except (ValueError, AttributeError):
@@ -108,6 +114,12 @@ def _service_body(args):
         body["docs_md"] = args.docs_md
     if getattr(args, "by", None) is not None:
         body["started_by"] = args.by
+    if getattr(args, "kind", None) is not None:
+        body["kind"] = args.kind
+    if getattr(args, "unit", None) is not None:
+        body["unit"] = args.unit
+    if getattr(args, "autostart", None) is not None:
+        body["autostart"] = args.autostart
     return body
 
 
@@ -125,6 +137,117 @@ def cmd_register(args):
         print(f"Registrerad: {svc['name']} på port {svc['port']} ({svc['url']})")
     else:
         print(f"Registrerad: {svc['name']} som dokumentationspost ({svc['url']})")
+
+
+_INSTALL_SLUG_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def _install_error(message):
+    print(f"Fel: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def _systemd_user_dir():
+    override = os.environ.get("SVC_SYSTEMD_USER_DIR")
+    return Path(override) if override else Path.home() / ".config" / "systemd" / "user"
+
+
+def _unit_path_value(value):
+    if any(char in value for char in ("\n", "\r", "\0")):
+        _install_error("arbetskatalogen innehåller otillåtna tecken")
+    return value.replace("%", "%%")
+
+
+def _unit_text(name, command, cwd):
+    return (
+        "[Unit]\n"
+        f"Description=Portalprojekt {name}\n"
+        "X-Portal-Managed=true\n"
+        "After=network.target\n\n"
+        "[Service]\n"
+        "Type=simple\n"
+        f"WorkingDirectory={_unit_path_value(str(cwd))}\n"
+        f"ExecStart={command}\n"
+        "Restart=on-failure\n"
+        "RestartSec=2\n\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
+
+
+def _write_unit_no_replace(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, 0o644)
+        try:
+            os.link(temp_name, path)
+        except FileExistsError:
+            _install_error(f"unit-filen finns redan: {path}")
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
+def _run_systemctl(*args):
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", *args],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _install_error(f"systemctl kunde inte köras: {exc}")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "okänt fel").strip()
+        _install_error(f"systemctl {' '.join(args)} misslyckades: {detail}")
+
+
+def cmd_install(args):
+    if not _INSTALL_SLUG_RE.fullmatch(args.project):
+        _install_error("projektnamnet får bara innehålla a-z, 0-9 och bindestreck")
+    if not args.cmd.strip() or any(char in args.cmd for char in ("\n", "\r", "\0")):
+        _install_error("startkommandot är tomt eller innehåller otillåtna radbrytningar")
+    if args.port is not None and not 1 <= args.port <= 65535:
+        _install_error("port måste vara mellan 1 och 65535")
+    cwd = Path(args.cwd).expanduser().resolve()
+    if not cwd.is_dir():
+        _install_error(f"arbetskatalogen finns inte: {cwd}")
+    unit_name = f"{args.project}.service"
+    unit_path = _systemd_user_dir() / unit_name
+    _write_unit_no_replace(unit_path, _unit_text(args.project, args.cmd, cwd))
+    try:
+        _run_systemctl("daemon-reload")
+        if args.autostart:
+            _run_systemctl("enable", unit_name)
+    except SystemExit:
+        unit_path.unlink(missing_ok=True)
+        raise
+
+    body = {
+        "project": args.project,
+        "kind": "systemd",
+        "unit": unit_name,
+        "autostart": args.autostart,
+    }
+    if args.port is not None:
+        body["port"] = args.port
+    existing = _request(
+        "GET", f"/api/services/{args.project}", not_found_none=True
+    )
+    if existing is None:
+        result = _request(
+            "POST", "/api/services", {"name": args.project, **body}
+        )
+    else:
+        result = _request("PATCH", f"/api/services/{args.project}", body)
+    print(f"Installerad: {unit_name} ({unit_path})")
+    print(f"Registrerad i portalen som: {result['name']}")
 
 
 def cmd_unregister(args):
@@ -213,6 +336,18 @@ def _add_common_fields(p):
     p.add_argument("--desc", help="Beskrivning av tjänsten")
     p.add_argument("--docs-file", help="Absolut sökväg till markdown-dokumentation")
     p.add_argument("--docs-md", help="Inline-dokumentation som markdown")
+    p.add_argument(
+        "--kind",
+        choices=("ephemeral", "systemd", "docker"),
+        help="Tjänsttyp: ephemeral, systemd eller docker",
+    )
+    p.add_argument("--unit", help="Systemd-unit eller containernamn")
+    p.add_argument(
+        "--autostart",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Markera om managed-tjänsten ska autostarta",
+    )
 
 
 def main():
@@ -245,6 +380,22 @@ def main():
     p.add_argument("--by", help="Vem som startade, t.ex. 'claude, projekt X'")
     _add_common_fields(p)
     p.set_defaults(func=cmd_register)
+
+    p = sub.add_parser(
+        "install",
+        help="Installera ett projekt som systemd user-tjänst",
+        description="Skapar en lokal systemd user-unit och registrerar endast "
+                    "unit-namnet i portalen. Startkommandot lämnar aldrig VM:en.",
+    )
+    p.add_argument("project", help="Projektnamn (slug: a-z, 0-9, bindestreck)")
+    p.add_argument("--cmd", required=True, help="ExecStart-kommando för systemd")
+    p.add_argument("--cwd", required=True, help="Projektets arbetskatalog")
+    p.add_argument("--port", type=int, help="Projektets förväntade port")
+    p.add_argument(
+        "--autostart", action="store_true",
+        help="Aktivera uniten för start vid användarsessionens start",
+    )
+    p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("unregister", help="Avregistrera en tjänst")
     p.add_argument("name")

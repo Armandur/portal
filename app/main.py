@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import BASE_DIR, PORTAL_PORT
 from app.database import clean_expired_shares, init_db, upsert_service
 from app.ledger import import_ledger, write_ledger
+from app.ports import clean_dead_ephemeral_services
 from app.routes import api, pages
 
 
@@ -33,6 +34,7 @@ def _register_self() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     import_ledger()
+    clean_dead_ephemeral_services()
     _register_self()
     write_ledger()
     clean_expired_shares()

@@ -87,6 +87,10 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 .badge.up { color: var(--up); background: var(--up-bg); }
 .badge.down { color: var(--down); background: var(--down-bg); }
 .badge.conflict, .badge.mixed { color: var(--conflict); background: var(--conflict-bg); }
+.badge.drift, .badge.starting, .badge.stopping, .badge.unknown {
+  color: var(--conflict);
+  background: var(--conflict-bg);
+}
 .badge.docs { color: var(--docs); background: var(--docs-bg); }
 
 /* Prioritetsbadges för todos: P1-P2 bränner, P3 neutral, P4-P5 tonas ner */
@@ -174,6 +178,24 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 .svc-row-head .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
 .svc-label { font-size: 0.92rem; font-weight: 500; }
 .card-links { display: flex; gap: 1rem; font-size: 0.9rem; flex-wrap: wrap; }
+.svc-row:has(.svc-control) { flex: 1 1 auto; }
+.svc-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.svc-action {
+  width: auto;
+  margin: 0.15rem 0 0;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.82rem;
+}
+.svc-action-error {
+  color: var(--down);
+  overflow-wrap: anywhere;
+}
 
 /* Kompaktare tabeller än Picos default */
 :where(#shares, #unregistered) :is(th, td) {

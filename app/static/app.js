@@ -5,6 +5,10 @@ const STATUS_LABELS = {
   up: "Uppe",
   down: "Nere",
   conflict: "Konflikt",
+  drift: "Drift",
+  starting: "Startar",
+  stopping: "Stoppar",
+  unknown: "Okänd",
   mixed: "Delvis uppe",
   docs: "Docs",
 };
@@ -18,10 +22,43 @@ function aggregateStatus(services) {
   // Dokumentationsposter (utan port) räknas inte in i upp/nere-bedömningen
   const live = services.filter((s) => s.status !== "docs");
   if (live.length === 0) return "docs";
+  if (live.some((s) => s.status === "drift")) return "drift";
   if (live.some((s) => s.status === "conflict")) return "conflict";
   if (live.every((s) => s.status === "up")) return "up";
   if (live.every((s) => s.status === "down")) return "down";
   return "mixed";
+}
+
+const serviceUiState = new Map();
+
+function serviceAction(svc) {
+  if (!svc.controllable) return null;
+  if (svc.status === "down") return { action: "start", label: "Starta" };
+  if (svc.status === "up") return { action: "stop", label: "Stoppa" };
+  return null;
+}
+
+function renderServiceControl(svc) {
+  const state = serviceUiState.get(svc.name) || {};
+  const control = serviceAction(svc);
+  if (!control && !state.error) return "";
+  const name = escapeHtml(svc.name);
+  const activeAction = state.action || control?.action;
+  const label = state.pending
+    ? activeAction === "start" ? "Startar..." : "Stoppar..."
+    : control?.label;
+  const button = control
+    ? `<button type="button" class="outline svc-action"
+              data-service="${name}" data-action="${control.action}"
+              aria-label="${control.label} ${name}"
+              ${state.pending ? `disabled aria-busy="true"` : ""}>
+        ${escapeHtml(label)}
+      </button>`
+    : "";
+  const error = state.error
+    ? `<small class="svc-action-error" role="alert">${escapeHtml(state.error)}</small>`
+    : "";
+  return `<div class="svc-control">${button}${error}</div>`;
 }
 
 // Grupperar tjänster per projekt (bevarar portordningen från API:t)
@@ -57,6 +94,7 @@ function renderServiceRow(svc, showLabel) {
         <a href="${escapeHtml(svc.url)}">${escapeHtml(svc.url)}</a>
         ${docsLink}
       </div>
+      ${renderServiceControl(svc)}
     </div>`;
 }
 
@@ -205,6 +243,37 @@ function renderTodos(data) {
   return warning + data.projects.map(renderTodoCard).join("");
 }
 
+let currentServices = [];
+
+function renderServices(services) {
+  currentServices = services;
+  return services.length
+    ? groupByProject(services).map(renderProjectCard).join("")
+    : `<p class="muted">Inga tjänster registrerade ännu.</p>`;
+}
+
+function replaceService(service) {
+  currentServices = currentServices.map((item) =>
+    item.name === service.name ? service : item
+  );
+  document.getElementById("services").innerHTML = renderServices(currentServices);
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function settleService(service) {
+  let latest = service;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    replaceService(latest);
+    if (!["starting", "stopping"].includes(latest.status)) return;
+    await delay(400);
+    latest = await apiFetch(`/api/services/${encodeURIComponent(latest.name)}`);
+  }
+  replaceService(latest);
+}
+
 // Varje sektion hämtas och renderas oberoende: ett fel i en fetch fastnar
 // inte de andra korten i "Laddar...", och felet pekar ut rätt sektion.
 const SECTIONS = [
@@ -212,22 +281,48 @@ const SECTIONS = [
     id: "services",
     url: "/api/services",
     label: "tjänster",
-    render: (services) =>
-      services.length
-        ? groupByProject(services).map(renderProjectCard).join("")
-        : '<p class="muted">Inga tjänster registrerade ännu.</p>',
+    render: renderServices,
   },
   { id: "todos", url: "/api/todos", label: "todos", render: renderTodos },
   { id: "shares", url: "/api/shares", label: "delningar", render: renderShares },
   { id: "unregistered", url: "/api/ports", label: "portar", render: renderUnregistered },
 ];
 
+document.getElementById("services").addEventListener("click", async (event) => {
+  const button = event.target.closest(".svc-action");
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const serviceName = button.dataset.service;
+  const existingState = serviceUiState.get(serviceName);
+  if (existingState?.pending) return;
+  serviceUiState.set(serviceName, { pending: true, action, error: null });
+  document.getElementById("services").innerHTML = renderServices(currentServices);
+
+  try {
+    const service = await apiFetch(
+      `/api/services/${encodeURIComponent(serviceName)}/${action}`,
+      { method: "POST" }
+    );
+    await settleService(service);
+    serviceUiState.delete(serviceName);
+  } catch (err) {
+    serviceUiState.set(serviceName, {
+      pending: false,
+      action,
+      error: `Kunde inte ${action === "start" ? "starta" : "stoppa"} tjänsten: ${err.message}`,
+    });
+  }
+  document.getElementById("services").innerHTML = renderServices(currentServices);
+});
+
 async function refresh() {
   await Promise.all(
     SECTIONS.map(async (sec) => {
       const el = document.getElementById(sec.id);
       try {
-        el.innerHTML = sec.render(await apiFetch(sec.url));
+        const data = await apiFetch(sec.url);
+        el.innerHTML = sec.id === "services" ? renderServices(data) : sec.render(data);
       } catch (err) {
         el.innerHTML = `<p class="muted">Kunde inte hämta ${escapeHtml(sec.label)}: ${escapeHtml(err.message)}</p>`;
       }
