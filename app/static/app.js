@@ -41,7 +41,12 @@ function serviceAction(svc) {
 function renderServiceControl(svc) {
   const state = serviceUiState.get(svc.name) || {};
   const control = serviceAction(svc);
-  if (!control && !state.error) return "";
+  const logButton = svc.has_logs
+    ? `<button type="button" class="outline svc-action svc-log"
+              data-service="${escapeHtml(svc.name)}"
+              aria-label="Visa logg för ${escapeHtml(svc.name)}">Logg</button>`
+    : "";
+  if (!control && !state.error && !logButton) return "";
   const name = escapeHtml(svc.name);
   const activeAction = state.action || control?.action;
   const label = state.pending
@@ -58,7 +63,7 @@ function renderServiceControl(svc) {
   const error = state.error
     ? `<small class="svc-action-error" role="alert">${escapeHtml(state.error)}</small>`
     : "";
-  return `<div class="svc-control">${button}${error}</div>`;
+  return `<div class="svc-control">${button}${logButton}${error}</div>`;
 }
 
 // Grupperar tjänster per projekt (bevarar portordningen från API:t)
@@ -282,7 +287,69 @@ const SECTIONS = [
   { id: "unregistered", url: "/api/ports", label: "portar", render: renderUnregistered },
 ];
 
+// Loggströmmen (SSE) lever i en dialog utanför #services, så den överlever
+// kortvyns omrendering var 30:e sekund. Strömmen stängs alltid när dialogen
+// stängs - annars läcker en journalctl/tail-process per öppning.
+const logDialog = document.getElementById("log-dialog");
+const logOutput = document.getElementById("log-output");
+const logState = document.getElementById("log-state");
+const LOG_MAX_LINES = 2000;
+let logStream = null;
+
+function setLogState(status, label) {
+  logState.className = `badge ${status}`;
+  logState.textContent = label;
+}
+
+function appendLogLine(text) {
+  // Autoscrolla bara om användaren redan står vid botten - annars rycker vyn
+  // ifrån den som scrollat upp för att läsa.
+  const atBottom =
+    logOutput.scrollHeight - logOutput.scrollTop - logOutput.clientHeight < 40;
+  const line = document.createElement("div");
+  line.textContent = text;
+  logOutput.appendChild(line);
+  while (logOutput.childElementCount > LOG_MAX_LINES) {
+    logOutput.removeChild(logOutput.firstElementChild);
+  }
+  if (atBottom) logOutput.scrollTop = logOutput.scrollHeight;
+}
+
+function closeLogStream() {
+  if (logStream) {
+    logStream.close();
+    logStream = null;
+  }
+}
+
+function openLogStream(serviceName) {
+  closeLogStream();
+  logOutput.textContent = "";
+  document.getElementById("log-title").textContent = `Logg: ${serviceName}`;
+  setLogState("starting", "ansluter");
+  logStream = new EventSource(
+    `/api/services/${encodeURIComponent(serviceName)}/logs`
+  );
+  logStream.onopen = () => setLogState("up", "strömmar");
+  logStream.onmessage = (event) => appendLogLine(event.data);
+  logStream.onerror = () => {
+    // EventSource återansluter själv; visa avbrottet utan att döda strömmen.
+    setLogState("down", "avbruten");
+  };
+  if (!logDialog.open) logDialog.showModal();
+}
+
+document.getElementById("log-close").addEventListener("click", () => {
+  logDialog.close();
+});
+logDialog.addEventListener("close", closeLogStream);
+
 document.getElementById("services").addEventListener("click", async (event) => {
+  const logButton = event.target.closest(".svc-log");
+  if (logButton) {
+    openLogStream(logButton.dataset.service);
+    return;
+  }
   const button = event.target.closest(".svc-action");
   if (!button) return;
 

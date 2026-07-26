@@ -18,8 +18,8 @@ Portalen:
 - delar ut garanterat lediga portar (kollar registret, live-lyssnande portar
   via `ss -tlnp` och aktiva reservationer)
 - listar alla lyssnande portar, inklusive oregistrerade
-- visar en överblick över öppna todos per projekt (read-only från
-  backlog-verktyget) med länk vidare till backlog web för detaljerna
+- visar öppna todos per projekt (read-only från backlog-verktyget), med
+  renderad markdown-beskrivning och länk till tasken i backlog web
 
 Portalen kör själv på port 8890: http://ubuntu-ai:8890
 
@@ -64,7 +64,8 @@ PORT=$(svc port --range 8100-8199)
 # Registrera en tjänst när den startats
 svc register mitt-projekt --port 8123 --project mitt-projekt \
     --pid 12345 --desc "uvicorn app.main (dev)" --by "claude, mitt-projekt" \
-    --docs-file /home/rasmus/workspace/mitt-projekt/README.md
+    --docs-file /home/rasmus/workspace/mitt-projekt/README.md \
+    --log-file /home/rasmus/workspace/mitt-projekt/dev.log
 
 # Uppdatera fält
 svc update mitt-projekt --pid 23456 --desc "ny beskrivning"
@@ -98,6 +99,22 @@ svc update mitt-projekt-docs --port 8123 --pid 12345
 
 Portlösa poster får status `docs`, länkar till sin dokumentationssida i
 stället för en port-URL och skrivs med `-` i liggarens portkolumn.
+
+### Loggströmning
+
+Har en post en känd loggkälla får dess kort en **Logg**-knapp som strömmar
+loggen live i webbläsaren. Källan är antingen `--log-file` (valfri tjänst)
+eller journalen för en systemd-unit registrerad med `--kind systemd
+--unit NAMN.service`.
+
+```bash
+# Efemär dev-server: peka ut loggfilen
+svc update mitt-projekt --log-file /home/rasmus/workspace/mitt-projekt/dev.log
+
+# Systemd-tjänst: journalen används automatiskt
+svc register min-tjanst --port 8123 --project x --kind systemd \
+    --unit min-tjanst.service
+```
 
 ## API-översikt
 

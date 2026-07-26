@@ -11,16 +11,18 @@ from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app import backlog
 from app import database as db
 from app.config import (
-    PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL, PORTAL_PORT,
-    SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES, THEME_MAX_BYTES,
+    LOG_TAIL_LINES, PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL,
+    PORTAL_PORT, SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES,
+    THEME_MAX_BYTES,
 )
 from app.ledger import write_ledger
+from app.logs import has_logs, log_source, stream_lines
 from app.supervisor import (
     SupervisorError, control_systemd, portal_managed_systemd_unit,
     systemd_unit_state, systemd_unit_states, valid_systemd_unit,
@@ -46,6 +48,7 @@ class ServiceIn(BaseModel):
     kind: Literal["ephemeral", "systemd", "docker"] = "ephemeral"
     unit: str | None = None
     autostart: bool = False
+    log_path: str | None = None
 
 
 class ServicePatch(BaseModel):
@@ -60,6 +63,7 @@ class ServicePatch(BaseModel):
     kind: Literal["ephemeral", "systemd", "docker"] | None = None
     unit: str | None = None
     autostart: bool | None = None
+    log_path: str | None = None
 
 
 class ReserveIn(BaseModel):
@@ -108,6 +112,7 @@ def _with_status(
     else:
         out["url"] = f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}"
     out["has_docs"] = bool(svc.get("docs_path") or svc.get("docs_md"))
+    out["has_logs"] = has_logs(svc)
     return out
 
 
@@ -142,6 +147,34 @@ def get_service(name: str):
     if svc is None:
         raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
     return _with_status(svc, scan_listening_ports(), _systemd_states([svc]))
+
+
+def _sse_event(line: str) -> str:
+    """Formaterar en loggrad som ett SSE-event. En rad blir "data: <rad>\n\n".
+    Innehåller raden (mot förmodan) radbrytningar skrivs ett data-prefix per
+    delrad, enligt SSE-spec, avslutat med en tom rad."""
+    parts = line.split("\n")
+    return "".join(f"data: {part}\n" for part in parts) + "\n"
+
+
+@router.get("/services/{name}/logs")
+async def stream_service_logs(name: str, tail: int = LOG_TAIL_LINES):
+    svc = db.get_service(name)
+    if svc is None:
+        raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
+    if log_source(svc) is None:
+        raise HTTPException(400, "Tjänsten har ingen känd loggkälla.")
+    tail = max(1, min(tail, 2000))
+
+    async def generator():
+        async for line in stream_lines(svc, tail):
+            yield _sse_event(line)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/services", status_code=201)

@@ -112,6 +112,8 @@ def _service_body(args):
         body["docs_path"] = os.path.abspath(args.docs_file)
     if args.docs_md is not None:
         body["docs_md"] = args.docs_md
+    if getattr(args, "log_file", None) is not None:
+        body["log_path"] = os.path.abspath(args.log_file)
     if getattr(args, "by", None) is not None:
         body["started_by"] = args.by
     if getattr(args, "kind", None) is not None:
@@ -336,6 +338,7 @@ def _add_common_fields(p):
     p.add_argument("--desc", help="Beskrivning av tjänsten")
     p.add_argument("--docs-file", help="Absolut sökväg till markdown-dokumentation")
     p.add_argument("--docs-md", help="Inline-dokumentation som markdown")
+    p.add_argument("--log-file", help="Sökväg till loggfil som portalen kan strömma live")
     p.add_argument(
         "--kind",
         choices=("ephemeral", "systemd", "docker"),

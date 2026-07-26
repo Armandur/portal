@@ -17,7 +17,12 @@ from app.routes import api, pages
 
 
 def _register_self() -> None:
-    """Registrerar/uppdaterar portalen själv i registret vid start."""
+    """Registrerar/uppdaterar portalen själv i registret vid start.
+
+    kind/unit sätts så portalens eget kort får en loggknapp (journalen för
+    uniten). Det ger inte en stoppknapp: `controllable` kräver att unitfilen
+    är märkt X-Portal-Managed=true, vilket portal.service inte är.
+    """
     upsert_service({
         "name": "portal",
         "project": "portal",
@@ -27,6 +32,8 @@ def _register_self() -> None:
         "url_path": "/",
         "docs_path": str(BASE_DIR / "README.md"),
         "started_by": "portal (självregistrering)",
+        "kind": "systemd",
+        "unit": "portal.service",
     })
 
 

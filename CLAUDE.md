@@ -47,6 +47,8 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   skriver, portalen visar (/api/todos, Todos-sektionen på förstasidan).
   Returnerar bara räknare per projekt, ingen task-detalj (se designbeslutet
   om todo-överblicken).
+- `app/logs.py` - loggkälleresolution och live-strömning för
+  GET /api/services/{name}/logs (SSE).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html,
   tema.html (tema-buildern; fristående sida, ej förstasidans layout).
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
@@ -80,6 +82,23 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   Alla backlog-projekt listas globalt, inte bara de med registrerad tjänst -
   merparten av todo-projekten har ingen tjänst och skulle annars försvinna.
   Ingen markdown-rendering eller sanering behövs längre i backlog.py.
+- **Loggströmning (`GET /api/services/{name}/logs`).** SSE-ström med
+  tjänstens logg. Källan resolveras i `app/logs.py:log_source` ur DB-raden:
+  explicit `log_path` (absolut sökväg, satt med `svc register/update
+  --log-file`) -> `tail -n N -F`, annars systemd-unit -> `journalctl --user
+  -u <unit> -f`. Ingen loggkälla = 400 och `has_logs: false` i API:t, så
+  kortet renderar ingen knapp. **Säkerhetsinvariant:** endpointen tar ett
+  tjänstNAMN och slår upp sökväg/unit i DB - ingen klientlevererad sökväg
+  når `open()`/`journalctl`. Läsning gatas med `valid_systemd_unit()`, INTE
+  `portal_managed_systemd_unit()` (den gaten gäller start/stopp; att bara
+  läsa loggen är lägre risk och gaten skulle utestänga units portalen inte
+  installerat). Strömmen körs med `asyncio.create_subprocess_exec` - bara
+  då hinner `finally`-städningen döda subprocessen när klienten kopplar
+  ner; blockande readline i threadpool hänger kvar på en tyst logg.
+  Ingen docker-gren: containrarna kör på TERVO2, inte här.
+  Klientsidan lägger loggpanelen i en `<dialog>` UTANFÖR `#services`,
+  eftersom kortvyn byter ut hela sin innerHTML var 30:e sekund och annars
+  skulle slå sönder en öppen ström.
 - **Statuslogik** (`app/ports.py:service_status`): "docs" om posten saknar
   port (ren dokumentationspost); annars "up" om porten lyssnar och
   registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna

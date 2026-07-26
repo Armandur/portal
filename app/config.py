@@ -50,6 +50,9 @@ BACKLOG_WEB_BASE = os.environ.get("PORTAL_BACKLOG_WEB_BASE", f"http://{SERVICE_H
 # Portreservationer gäller så här många minuter innan de städas bort
 RESERVATION_TTL_MINUTES = int(os.environ.get("PORTAL_RESERVATION_TTL", "15"))
 
+# Default antal historikrader vid loggströmning (GET /api/services/{name}/logs)
+LOG_TAIL_LINES = int(os.environ.get("PORTAL_LOG_TAIL_LINES", "200"))
+
 # Default-range för lediga portar
 PORT_RANGE_START = 8000
 PORT_RANGE_END = 8999
