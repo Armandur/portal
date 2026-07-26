@@ -43,7 +43,8 @@ PORTAL_BASE_URL = f"http://{SERVICE_HOST}" + ("" if PORTAL_PORT == 80 else f":{P
 BACKLOG_BIN = os.environ.get("PORTAL_BACKLOG_BIN", str(Path.home() / ".local" / "bin" / "backlog"))
 BACKLOG_PROFILE = os.environ.get("PORTAL_BACKLOG_PROFILE", "default")
 
-# Bas-URL till backlog web-UI:t; todo-korten deep-länkar dit (/tasks/<ref>).
+# Bas-URL till backlog web-UI:t (detaljvyn). Todo-överblicken länkar dit per
+# projekt: /?project=<alias> sätter backlog webs globala projektfilter.
 BACKLOG_WEB_BASE = os.environ.get("PORTAL_BACKLOG_WEB_BASE", f"http://{SERVICE_HOST}:8004")
 
 # Portreservationer gäller så här många minuter innan de städas bort

@@ -2,72 +2,22 @@
 
 Portalen äger inga todos - den läser dem read-only från backlog-CLI:t via
 det stabila `--json`-gränssnittet (aldrig råa SQLite-tabeller, vars schema
-migrerar). backlog självt äger all skrivning. En kort cache räcker: klienten
-pollar var 30:e sekund och flera samtidiga besök ska inte spawna en process
-var.
+migrerar). backlog självt äger all skrivning. Portalen visar bara en
+kompakt överblick (antal öppna/pågående per projekt) länkad till backlogs
+egen webb-UI, som är detaljvyn. En kort cache räcker: klienten pollar var
+30:e sekund och flera samtidiga besök ska inte spawna en process var.
 """
 
 import json
 import subprocess
 import threading
 import time
-
-import bleach
-import markdown as _md
+import urllib.parse
 
 from app.config import BACKLOG_BIN, BACKLOG_PROFILE, BACKLOG_WEB_BASE
 
-# Prioritet lagras som heltal 1-5 i backlog; visa som P1-P5.
 _OPEN_STATUSES = ("todo", "doing")
 _LIMIT = 500
-
-# Task-descriptions är markdown. De renderas server-side och SANERAS med en
-# allowlist innan de skickas till klienten (som injicerar dem via innerHTML) -
-# så inget injektionsutrymme öppnas oavsett vad en task-beskrivning innehåller.
-_ALLOWED_TAGS = [
-    "h2", "h3", "h4", "p", "ul", "ol", "li", "code", "pre",
-    "strong", "em", "a", "br", "hr", "blockquote", "input",
-]
-_ALLOWED_ATTRS = {"a": ["href", "title"], "input": ["type", "checked", "disabled"]}
-
-
-def _render_description(text: str) -> str:
-    """Renderar markdown -> sanerad HTML (allowlist). Aldrig råa taggar/skript."""
-    if not text:
-        return ""
-    html = _md.markdown(
-        text,
-        extensions=["fenced_code", "tables", "pymdownx.tasklist"],
-        extension_configs={"pymdownx.tasklist": {"custom_checkbox": False}},
-    )
-    return bleach.clean(html, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS, strip=True)
-
-
-# Beskrivningar kortare än så här (ren text) renderas inline utan <details> -
-# en utfällning som visar samma text igen tillför inget.
-_COLLAPSE_THRESHOLD = 160
-
-
-def _summary(text: str) -> str:
-    """Prosa-preview till <summary>: hoppa över rubrik-/HR-rader (t.ex. '## Context'),
-    strippa list-/checkbox-markörer, ta första meningen (~100 tecken)."""
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or set(s) <= {"-", "*", "_"}:
-            continue  # tom rad, rubrik, eller horisontell linje
-        s = s.lstrip("-*0123456789. ").strip()               # listmarkör
-        s = s.replace("[ ]", "").replace("[x]", "").strip()  # checkbox
-        if not s:
-            continue
-        sentence = s.split(". ")[0].rstrip(".")
-        return f"{sentence[:100]}…" if len(sentence) > 100 else sentence
-    return ""
-
-
-def _plaintext(html: str) -> str:
-    """Ren text ur renderad HTML - för att bedöma om en beskrivning är lång."""
-    return bleach.clean(html, tags=[], strip=True).strip()
-
 
 _cache: dict = {"at": 0.0, "data": None}
 _CACHE_TTL = 15.0
@@ -112,51 +62,36 @@ def _run_list() -> tuple[list[dict], bool]:
     return tasks, truncated
 
 
-def _shape(task: dict) -> dict:
-    """Plockar ut de fält portalen visar och normaliserar formatet."""
-    project = task.get("project") or {}
-    actor = task.get("actor") or {}
-    ref = f"TASK-{task['seq']}" if task.get("seq") is not None else task.get("id", "")
-    description = task.get("description") or ""
-    description_html = _render_description(description)
-    # Fäll bara ihop långa beskrivningar; korta renderas inline (klienten följer collapse).
-    collapse = len(_plaintext(description_html)) > _COLLAPSE_THRESHOLD
-    return {
-        "ref": ref,
-        "title": task.get("title", ""),
-        "description": description,
-        "description_html": description_html,
-        "description_summary": _summary(description),
-        "collapse": collapse,
-        "priority": task.get("priority", 3),
-        "status": task.get("status", "todo"),
-        "type": task.get("type", "task"),
-        "project": project.get("alias", "okänt"),
-        "project_path": task.get("project_path") or "",
-        "source": task.get("source") or "",
-        "actor": f"{actor.get('kind', '')}:{actor.get('name', '')}".strip(":"),
-        "web_url": f"{BACKLOG_WEB_BASE}/tasks/{ref}" if ref else BACKLOG_WEB_BASE,
-    }
-
-
-def _group(tasks: list[dict]) -> list[dict]:
-    """Grupperar öppna tasks per projekt (bevarar prio-ordningen inom gruppen)."""
-    groups: dict[str, list[dict]] = {}
+def _aggregate(tasks: list[dict]) -> list[dict]:
+    """Räknar öppna/pågående todos per projekt, sorterat fallande på öppna."""
+    counts: dict[str, dict[str, int]] = {}
     for task in tasks:
         if task.get("status") not in _OPEN_STATUSES:
             continue
-        shaped = _shape(task)
-        groups.setdefault(shaped["project"], []).append(shaped)
-    return [
-        {"project": alias, "todos": items}
-        for alias, items in sorted(groups.items())
+        project = task.get("project") or {}
+        alias = project.get("alias", "okänt")
+        entry = counts.setdefault(alias, {"open": 0, "doing": 0})
+        entry["open"] += 1
+        if task.get("status") == "doing":
+            entry["doing"] += 1
+    projects = [
+        {
+            "project": alias,
+            "open": c["open"],
+            "doing": c["doing"],
+            "url": f"{BACKLOG_WEB_BASE}/?project={urllib.parse.quote(alias)}",
+        }
+        for alias, c in counts.items()
     ]
+    projects.sort(key=lambda p: (-p["open"], p["project"]))
+    return projects
 
 
 def open_todos() -> dict:
-    """Returnerar öppna todos grupperade per projekt.
+    """Returnerar en kompakt överblick av öppna todos per projekt.
 
-    Formen: {"available": bool, "error": str | None, "projects": [...]}.
+    Formen: {"available": bool, "error": str | None, "truncated": bool,
+    "total": int, "web_base": str, "projects": [...]}.
     Alltid ett giltigt svar - fel fångas och rapporteras, aldrig en 500.
     """
     now = time.monotonic()
@@ -169,20 +104,26 @@ def open_todos() -> dict:
         if _cache["data"] is not None and now - _cache["at"] < _CACHE_TTL:
             return _cache["data"]
 
+        base = {"web_base": BACKLOG_WEB_BASE}
         try:
             tasks, truncated = _run_list()
-            projects = _group(tasks)
-            data = {"available": True, "error": None, "truncated": truncated, "projects": projects}
+            projects = _aggregate(tasks)
+            data = {
+                **base, "available": True, "error": None, "truncated": truncated,
+                "total": sum(p["open"] for p in projects), "projects": projects,
+            }
         except FileNotFoundError:
-            data = {"available": False, "error": "backlog-binären hittas inte", "truncated": False, "projects": []}
+            data = {**base, "available": False, "error": "backlog-binären hittas inte",
+                    "truncated": False, "total": 0, "projects": []}
         except (
             subprocess.TimeoutExpired, RuntimeError, json.JSONDecodeError,
             KeyError, AttributeError, TypeError, ValueError,
         ) as exc:
             # AttributeError/TypeError: t.ex. om backlog ändrar JSON-formen så att
-            # ett fält har oväntad typ i _shape/_group. ValueError: oväntad uppackning.
+            # ett fält har oväntad typ i _aggregate. ValueError: oväntad uppackning.
             # Vyn ska aldrig ge 500 - alltid ett giltigt {available: false}-svar.
-            data = {"available": False, "error": str(exc), "truncated": False, "projects": []}
+            data = {**base, "available": False, "error": str(exc), "truncated": False,
+                    "total": 0, "projects": []}
 
         _cache["at"] = now
         _cache["data"] = data

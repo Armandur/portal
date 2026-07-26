@@ -98,6 +98,25 @@ function renderServiceRow(svc, showLabel) {
     </div>`;
 }
 
+// Todo-räknare per projekt, fylld när /api/todos landar. Kortvyn och
+// todo-sektionen hämtas oberoende, så kortet kan renderas innan siffrorna
+// finns - då utelämnas raden och fylls i vid nästa rendering.
+let todoCounts = new Map();
+
+function renderProjectTodos(project) {
+  const counts = todoCounts.get(project);
+  if (!counts || !counts.open) return "";
+  const doing = counts.doing
+    ? ` <span class="badge doing">${counts.doing} pågår</span>`
+    : "";
+  return `
+    <div class="card-todos">
+      <a href="${escapeHtml(counts.url)}" target="_blank" rel="noopener">
+        ${counts.open} ${counts.open === 1 ? "todo" : "todos"}
+      </a>${doing}
+    </div>`;
+}
+
 function renderProjectCard(services) {
   const multi = services.length > 1;
   const headStatus = multi ? aggregateStatus(services) : services[0].status;
@@ -117,6 +136,7 @@ function renderProjectCard(services) {
       </div>
       ${portLine}
       ${rows}
+      ${renderProjectTodos(services[0].project)}
     </article>`;
 }
 
@@ -179,56 +199,12 @@ function renderUnregistered(ports) {
     </table>`;
 }
 
-function renderTodoRow(todo) {
-  const prio = `P${todo.priority}`;
-  const doing = todo.status === "doing"
-    ? '<span class="badge doing">pågår</span>'
-    : "";
-  const src = todo.source
-    ? `<span class="badge src">${escapeHtml(todo.source)}</span>`
-    : "";
-  const ctx = todo.project_path
-    ? `<code class="todo-ctx">${escapeHtml(todo.project_path)}</code>`
-    : "";
-  // description_html är renderad + sanerad server-side (bleach allowlist),
-  // därför säker att injicera. Korta beskrivningar (collapse=false) renderas
-  // inline; långa fälls ihop i en <details> med prosa-summary (escapas).
-  let desc = "";
-  if (todo.description_html) {
-    desc = todo.collapse
-      ? `<details class="todo-desc">
-          <summary>${escapeHtml(todo.description_summary || "Detaljer")}</summary>
-          <div class="todo-desc-body">${todo.description_html}</div>
-        </details>`
-      : `<div class="todo-desc todo-desc-body">${todo.description_html}</div>`;
-  }
-  // Titeln (med ref) länkar till tasken i backlog web-UI:t.
-  return `
-    <div class="todo-row">
-      <span class="badge prio-${escapeHtml(prio)}">${escapeHtml(prio)}</span>
-      <a class="todo-title" href="${escapeHtml(todo.web_url)}" target="_blank" rel="noopener">
-        <span class="todo-ref">${escapeHtml(todo.ref)}</span> ${escapeHtml(todo.title)}
-      </a>
-      ${doing}
-      ${src}
-      ${ctx}
-      ${desc}
-    </div>`;
-}
-
-function renderTodoCard(group) {
-  const rows = group.todos.map(renderTodoRow).join("");
-  return `
-    <article>
-      <div class="card-head">
-        <h3>${escapeHtml(group.project)}</h3>
-        <span class="badge">${group.todos.length}</span>
-      </div>
-      ${rows}
-    </article>`;
-}
-
+// Portalen visar bara överblicken - detaljvyn är backlogs egen webb-UI, som
+// varje rad länkar till. Sidoeffekt: fyller todoCounts åt kortvyn.
 function renderTodos(data) {
+  todoCounts = new Map(
+    (data.projects || []).map((p) => [p.project, p])
+  );
   if (!data.available) {
     return `<p class="muted">Todos otillgängliga: ${escapeHtml(data.error || "okänt fel")}.</p>`;
   }
@@ -240,7 +216,25 @@ function renderTodos(data) {
   if (!data.projects.length) {
     return warning + '<p class="muted">Inga öppna todos.</p>';
   }
-  return warning + data.projects.map(renderTodoCard).join("");
+  const rows = data.projects
+    .map(
+      (p) => `
+      <tr>
+        <td><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${escapeHtml(p.project)}</a></td>
+        <td class="num">${p.open}</td>
+        <td>${p.doing ? `<span class="badge doing">${p.doing} pågår</span>` : '<span class="muted">-</span>'}</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    ${warning}
+    <table>
+      <thead><tr><th>Projekt</th><th class="num">Öppna</th><th>Pågår</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr><td>Totalt</td><td class="num">${data.total}</td><td></td></tr>
+      </tfoot>
+    </table>`;
 }
 
 let currentServices = [];
@@ -317,17 +311,26 @@ document.getElementById("services").addEventListener("click", async (event) => {
 });
 
 async function refresh() {
+  let servicesRendered = false;
   await Promise.all(
     SECTIONS.map(async (sec) => {
       const el = document.getElementById(sec.id);
       try {
         const data = await apiFetch(sec.url);
         el.innerHTML = sec.id === "services" ? renderServices(data) : sec.render(data);
+        if (sec.id === "services") servicesRendered = true;
       } catch (err) {
         el.innerHTML = `<p class="muted">Kunde inte hämta ${escapeHtml(sec.label)}: ${escapeHtml(err.message)}</p>`;
       }
     })
   );
+  // Sektionerna hämtas parallellt, så todo-siffrorna kan landa efter korten.
+  // Rendera om korten en gång när båda finns, annars saknas räknaren tills
+  // nästa varv. Bara om services-hämtningen lyckades - annars skulle ett
+  // felmeddelande skrivas över med inaktuella kort.
+  if (servicesRendered && todoCounts.size) {
+    document.getElementById("services").innerHTML = renderServices(currentServices);
+  }
   document.getElementById("refresh-info").textContent =
     "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");
 }

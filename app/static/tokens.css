@@ -93,74 +93,23 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 }
 .badge.docs { color: var(--docs); background: var(--docs-bg); }
 
-/* Prioritetsbadges för todos: P1-P2 bränner, P3 neutral, P4-P5 tonas ner */
-.badge.prio-P1, .badge.prio-P2 { color: var(--down); background: var(--down-bg); }
-.badge.prio-P3 { color: var(--conflict); background: var(--conflict-bg); }
-.badge.prio-P4, .badge.prio-P5 {
-  color: var(--pico-muted-color);
-  background: var(--pico-muted-border-color);
-}
 .badge.doing { color: var(--docs); background: var(--docs-bg); }
-.badge.src {
-  color: var(--pico-muted-color);
-  background: var(--pico-muted-border-color);
-  font-weight: 500;
-}
 
-/* Todo-rader inuti projektkort */
-.todo-row {
+/* Todo-räknare längst ner på projektkortet - detaljvyn ligger i backlog web */
+.card-todos {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: 0.92rem;
-}
-.todo-row + .todo-row {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
   border-top: 1px solid var(--pico-muted-border-color);
-  padding-top: 0.4rem;
-  margin-top: 0.4rem;
-}
-.todo-row .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
-.todo-title { flex: 1 1 60%; text-decoration: none; }
-.todo-title:hover { text-decoration: underline; }
-.todo-ref {
-  font-family: var(--pico-font-family-monospace);
-  font-size: 0.78rem;
-  color: var(--pico-muted-color);
-  margin-right: 0.15rem;
-}
-.todo-ctx {
-  flex-basis: 100%;
-  font-size: 0.78rem;
-  color: var(--pico-muted-color);
-  background: none;
-}
-.todo-desc {
-  flex-basis: 100%;
-  margin: 0.1rem 0 0;
-  font-size: 0.82rem;
-}
-.todo-desc > summary {
-  cursor: pointer;
-  color: var(--pico-muted-color);
-}
-.todo-desc-body {
-  margin-top: 0.35rem;
-  color: var(--pico-muted-color);
-  overflow-wrap: break-word;
-}
-.todo-desc-body code { overflow-wrap: anywhere; }
-.todo-desc-body > :first-child { margin-top: 0; }
-.todo-desc-body :is(h2, h3, h4) {
   font-size: 0.85rem;
-  margin: 0.5rem 0 0.2rem;
 }
-.todo-desc-body p { margin: 0.3rem 0; }
-.todo-desc-body ul,
-.todo-desc-body ol { margin: 0.2rem 0 0.2rem 1.1rem; }
-.todo-desc-body li { margin: 0.1rem 0; }
-.todo-desc-body code { font-size: 0.9em; }
-.todo-desc-body pre { overflow-x: auto; }
+.card-todos .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
+
+/* Todo-överblicken: siffrorna högerställs mot varandra */
+#todos .num { text-align: right; }
 
 /* Tjänsterader inuti projektkort med flera tjänster */
 .svc-row { display: flex; flex-direction: column; gap: 0.25rem; }
@@ -198,7 +147,7 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 }
 
 /* Kompaktare tabeller än Picos default */
-:where(#shares, #unregistered) :is(th, td) {
+:where(#shares, #unregistered, #todos) :is(th, td) {
   padding: 0.5rem 0.75rem;
   font-size: 0.92rem;
 }
@@ -221,7 +170,6 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
   color: var(--conflict);
   background: var(--conflict-bg);
   border: 1px solid var(--conflict);
-  grid-column: 1 / -1;   /* spänn över hela kort-gridet i #todos */
   margin: 0 0 0.5rem;
   font-size: 0.85rem;
 }

@@ -45,6 +45,8 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   Skalar ut till `backlog task list --json` (stabilt gränssnitt, aldrig rå
   SQLite), kort cache, robust felhantering. Portalen äger inga todos - backlog
   skriver, portalen visar (/api/todos, Todos-sektionen på förstasidan).
+  Returnerar bara räknare per projekt, ingen task-detalj (se designbeslutet
+  om todo-överblicken).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html,
   tema.html (tema-buildern; fristående sida, ej förstasidans layout).
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
@@ -69,6 +71,15 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - **Reservations-TTL 15 minuter.** Reservationer äldre än TTL ignoreras och
   städas vid nästa läsning. Registrering på en reserverad port tar bort
   reservationen.
+- **Todo-överblick, inte todo-detaljvy.** Backlogs egen webb-UI (port 8004)
+  är detaljvyn - portalen kan aldrig konkurrera med den och ska inte
+  försöka. `/api/todos` ger därför bara räknare: en rad per backlog-projekt
+  med öppna/pågående och en länk till `{BACKLOG_WEB_BASE}/?project=<alias>`
+  (query-parametern sätter backlog webs globala projektfilter). Samma
+  siffror visas som en kompakt rad längst ner på matchande projektkort.
+  Alla backlog-projekt listas globalt, inte bara de med registrerad tjänst -
+  merparten av todo-projekten har ingen tjänst och skulle annars försvinna.
+  Ingen markdown-rendering eller sanering behövs längre i backlog.py.
 - **Statuslogik** (`app/ports.py:service_status`): "docs" om posten saknar
   port (ren dokumentationspost); annars "up" om porten lyssnar och
   registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
