@@ -353,6 +353,67 @@ def _add_common_fields(p):
     )
 
 
+def cmd_test_create(args):
+    text = Path(args.items_file).read_text(encoding="utf-8")
+    body = {
+        "slug": args.slug,
+        "title": args.title,
+        "items_markdown": text,
+        "task_ref": args.task,
+        "project": args.project,
+    }
+    data = _request("POST", "/api/test-sessions", body)
+    n = data["summary"]["total"]
+    print(f"Testsession '{data['slug']}' skapad med {n} punkter.")
+    print(data["url"])
+
+
+def cmd_test_close(args):
+    data = _request("POST", f"/api/test/{args.slug}/close", {})
+    s = data["summary"]
+    print(f"Stängd: {s['avklarat']}/{s['total']} punkter "
+          f"({s['ok']} ok, {s['fel']} fel, {s['hoppad']} hoppade).")
+    if data.get("skriven_till_backlog"):
+        print(f"Sammanfattning kommenterad på {data['task_ref']}.")
+    elif data.get("task_ref"):
+        print(f"Kunde INTE skriva till {data['task_ref']}: {data.get('fel', 'okänt fel')}",
+              file=sys.stderr)
+        print("\nSammanfattningen, att lägga in för hand:\n", file=sys.stderr)
+        print(data["kommentar"])
+    else:
+        print("Sessionen saknar task - sammanfattningen skrevs ingenstans:\n")
+        print(data["kommentar"])
+
+
+def cmd_test_delete(args):
+    _request("DELETE", f"/api/test/{args.slug}")
+    print(f"Testsession '{args.slug}' borttagen.")
+
+
+def cmd_test_list(_args):
+    data = _request("GET", "/api/test-sessions")
+    rows = []
+    for s in data["sessions"]:
+        m = s["summary"]
+        rows.append([
+            s["slug"], s["task_ref"] or "-",
+            f"{m['avklarat']}/{m['total']}",
+            str(m["ok"]), str(m["fel"]), str(m["hoppad"]),
+            "stängd" if s["closed_at"] else "öppen",
+        ])
+    if not rows:
+        print("Inga testsessioner.")
+        return
+    _print_table(rows, ["SLUG", "TASK", "AVKLARAT", "OK", "FEL", "HOPPAD", "STATUS"])
+
+
+def cmd_test_show(args):
+    data = _request("GET", f"/api/test/{args.slug}")
+    if args.only:
+        data["items"] = [i for i in data["items"] if i["status"] == args.only]
+    print(json.dumps(data, ensure_ascii=False, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="svc",
@@ -444,6 +505,40 @@ def main():
 
     p = sub.add_parser("shares", help="Lista aktiva delningar")
     p.set_defaults(func=cmd_shares)
+
+    p = sub.add_parser(
+        "test-session",
+        help="Testlistor att beta av i portalen i stället för i chatten",
+        description="Skapar en lista testpunkter som Rasmus betar av i ett UI, "
+                    "och stänger den med en sammanfattning till backlog-tasken.",
+    )
+    tsub = p.add_subparsers(dest="testcmd", required=True)
+
+    q = tsub.add_parser("create", help="Skapa en testsession ur en markdown-fil")
+    q.add_argument("slug", help="Kort namn i URL:en, t.ex. hemslojd-780")
+    q.add_argument("--title", required=True, help="Rubrik som visas på sidan")
+    q.add_argument("--items-file", required=True,
+                   help="Markdown med numrerade punkter, grupperade med ## rubrik")
+    q.add_argument("--task", help="Task-ref, t.ex. TASK-780 (dit sammanfattningen skrivs)")
+    q.add_argument("--project", help="Projekt tasken hör till")
+    q.set_defaults(func=cmd_test_create)
+
+    q = tsub.add_parser("close", help="Stäng sessionen och kommentera tasken")
+    q.add_argument("slug")
+    q.set_defaults(func=cmd_test_close)
+
+    q = tsub.add_parser("delete", help="Ta bort en testsession helt")
+    q.add_argument("slug")
+    q.set_defaults(func=cmd_test_delete)
+
+    q = tsub.add_parser("list", help="Lista testsessioner och deras framsteg")
+    q.set_defaults(func=cmd_test_list)
+
+    q = tsub.add_parser("show", help="Visa en session som JSON")
+    q.add_argument("slug")
+    q.add_argument("--only", choices=["ok", "fel", "hoppad", "otestad"],
+                   help="Visa bara punkter med den statusen")
+    q.set_defaults(func=cmd_test_show)
 
     args = parser.parse_args()
     args.func(args)

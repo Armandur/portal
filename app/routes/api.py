@@ -439,10 +439,52 @@ class TestItemUpdate(BaseModel):
     note: str | None = None
 
 
+class TestSessionCreate(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,60}$")
+    title: str = Field(min_length=1, max_length=200)
+    items_markdown: str = Field(min_length=1)
+    task_ref: str | None = None
+    project: str | None = None
+
+
 @router.get("/test-sessions")
 def list_test_sessions():
     """Alla testsessioner med framsteg - agentens ingång när Rasmus säger klart."""
     return {"sessions": testruns.list_sessions()}
+
+
+@router.post("/test-sessions")
+def create_test_session(payload: TestSessionCreate):
+    """Skapar en session ur numrerade punkter i markdown.
+
+    Punkterna skickas in explicit - portalen letar aldrig upp dem själv ur en
+    taskbeskrivning, eftersom en numrerad lista där lika gärna kan vara något
+    annat än testfall.
+    """
+    items = testruns.parse_items(payload.items_markdown)
+    if not items:
+        raise HTTPException(
+            422,
+            "Hittade inga numrerade punkter. Varje testfall ska börja med "
+            "'N. ' i början av en rad, och grupperas med '## rubrik'.",
+        )
+    try:
+        testruns.create_session(
+            payload.slug, payload.title, items, payload.task_ref, payload.project
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, f"Det finns redan en testsession som heter '{payload.slug}'.")
+    session = testruns.get_session(payload.slug)
+    return {**session, "url": testruns.session_url(payload.slug)}
+
+
+@router.post("/test/{slug}/close")
+def close_test_session(slug: str):
+    """Stänger sessionen och lägger sammanfattningen som kommentar på tasken."""
+    resultat = testruns.close_session(slug)
+    if resultat is None:
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return resultat
 
 
 @router.get("/test/{slug}")
@@ -451,6 +493,13 @@ def get_test_session(slug: str):
     if session is None:
         raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
     return session
+
+
+@router.delete("/test/{slug}")
+def delete_test_session(slug: str):
+    if not testruns.delete_session(slug):
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return {"status": "borttagen", "slug": slug}
 
 
 @router.post("/test/{slug}/items/{position}")
