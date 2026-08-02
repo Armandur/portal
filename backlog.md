@@ -1,5 +1,48 @@
 # Backlog Export
 
+## [P2][todo] [portal] Lat städning av efemära döda tjänster (löser registeröverflödet)
+
+Del av TASK-354. Idag städas reservationer/delningar lazily via TTL men tjänster aldrig - listan växer monotont (14 av 26 döda). Inför samma lata mönster: en post med kind='ephemeral' vars PID är död OCH vars port är tyst reaps vid list_services() och vid lifespan-start (jfr clean_expired_shares).
+
+VIKTIGT: managed-tjänster (kind in systemd/docker) städas ALDRIG tyst - en nere managed = larm, inte skräp.
+
+Klart när: en död ad-hoc-post försvinner automatiskt vid nästa listning; en managed nere-post ligger kvar. Verifiera: registrera en fejk-ephemeral med död pid, anropa /api/services, posten borta; samma med kind=systemd, posten kvar.
+
+- ID: `01KY7XQVD82XW1K8TKXMDBQKS1`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P2][todo] [portal] Schema: kind/unit/autostart på services (grund för katalog)
+
+Del av TASK-354. Lägg till kolumner på services via guard-mönstret (_ensure_column i init_db, inte _SCHEMA-rebuild): kind TEXT DEFAULT 'ephemeral' (ephemeral|systemd|docker), unit TEXT (unit-/containernamn för managed), autostart INTEGER DEFAULT 0.
+
+Klart när: nya kolumner finns och överlever omstart; befintliga rader defaultar till kind='ephemeral'; update_service tillåter de nya fälten (lägg i 'allowed'); Pydantic-modellerna i api.py och CLI-flaggor uppdaterade. Verifiera: uv run python -c 'from app.main import app' + PRAGMA table_info(services) visar kolumnerna.
+
+- ID: `01KY7XQVB4K5CF2CPF2H04QD42`
+- Type: task
+- Actor: ai:claude-code
+
+---
+
+## [P2][todo] [portal] Projektkatalog: portalen som startbar katalog over alla projekt (epic)
+
+Skifte i modell: portalen gar fran 'register over vad som kor NU' till en KATALOG over alla projekt. Ett projekt ar en bestaende post som staller sig stilla tills man trycker play. Play/stop proxar en BEFINTLIG supervisor (systemd user-unit / docker) - portalen lagrar aldrig ett startkommando och kor det aldrig sjalv (den binder 0.0.0.0 utan auth -> vore oautentiserad RCE over Tailscale).
+
+Karnprinciper:
+- Portalen forblir ett register/UI. systemd/docker ager process-livscykeln.
+- Portalens HTTP-API kan bara starta/stoppa units som redan finns i dess DB (allowlist), aldrig godtyckligt.
+- Kommandot bakas in i unit-filen EN gang via lokalt CLI (svc install), passerar aldrig ett HTTP-endpoint.
+
+Delas upp i under-tasks (denna ar paraply). Full design: se rapport tmp/tjansteregister-hantering.md i repot samt konversation 2026-07-23. Relaterat: TASK-306 (hur mycket ska portalen gora).
+
+- ID: `01KY7XPSZDWD8567V24Y41MWW7`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
 ## [P2][done] [portal] Tema-round-trip: spara/återför tema till Claude + skill-integration
 
 Sista biten av tema-visionen (ur TASK-118): när ett nytt projekt byggs ska Claude fråga om tema, föreslå en färgkombo som en builder-URL ELLER länka buildern till Rasmus, som designar och FÖR TILLBAKA temat för implementering. URL-state finns redan (delbar/återöppningsbar länk) - det som saknas är återföringsvägen och skill-kopplingen. Steg 1 = designbeslut om mekanismen: (a) paste av tokens.css-text (funkar redan, noll backend), (b) server-endpoint som renderar tokens.css ur query-params så Claude kan WebFetch:a (kräver färgmatte i Python ELLER att klienten POSTar genererad CSS), (c) namngivna teman i DB: buildern POSTar spec+genererad tokens.css, /api/themes/{namn} returnerar den (ingen Python-matte, ger persistens). Sedan skill-integration (theme-preview-skillen eller ny). Inte brådskande men strategiskt nästa steg.
@@ -29,6 +72,88 @@ Skapa >10 done-tasks + en lågprio öppen; bekräfta att den öppna syns i /api/
 - ID: `01KXV7TYRTSJJ12NKZKHSXVYSJ`
 - Type: bug
 - Actor: ai:code-review
+
+---
+
+## [P3][todo] [portal] UI: play/stop-knapp i kortvyn för managed-tjänster
+
+Del av TASK-354. Kortvyn (/) visar en play-knapp på nere managed-tjänster och en stop-knapp på uppe managed-tjänster (kind != ephemeral). Klick POST:ar till /api/services/{name}/start|stop och uppdaterar kortet. Ephemeral-poster får ingen knapp.
+
+Klart när: knappen syns bara för managed, funkar, och kortet uppdateras utan omladdning. Browser-verifiera (se browser-verify-skillen): shot vid 390px OCH 1280px (ingen horisontell overflow, knappen träffbar på mobil), obscura-dump visar play/stop-knapp på managed-kort men inte på ephemeral-kort. Typkontroll räcker inte.
+
+- ID: `01KY7XRSB5ZK1NSVXTPR07JBFA`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] Spegla systemd/docker-status för managed-tjänster (stäng drift-gapet)
+
+Del av TASK-354. För kind='systemd' läs faktisk status från 'systemctl --user is-active <unit>' i stället för att lita på portskanning ensam. Idag kan registret och systemd glida isär: duharfagel visas 'up' på 8001 medan dess unit är inactive - det som lyssnar är en föräldralös manuell uvicorn. En managed tjänst vars supervisor säger inactive men vars port ändå lyssnar (annan process) ska flaggas som DRIFT, inte 'up'.
+
+Klart när: status för en managed tjänst speglar systemd, och drift (port lyssnar men unit inactive, eller tvärtom) syns som eget tillstånd. Verifiera mot duharfagel-fallet.
+
+- ID: `01KY7XRSA4KCC4R3YE0288S3Y0`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] Play/stop-endpoints: proxy till systemd, allowlist mot DB
+
+Del av TASK-354. POST /api/services/{name}/start och /stop. Slår upp posten, kräver kind='systemd' (annars 400), och kör 'systemctl --user start|stop <unit>' via subprocess. Får BARA agera på units som finns i portalens DB (allowlist) - aldrig ett namn från requesten direkt. Ingen auth finns, så attackytan begränsas av att endast förregistrerade units kan styras.
+
+Klart när: start/stop mot en registrerad systemd-tjänst funkar och statusen uppdateras; start mot okänd/ephemeral tjänst ger fel. Verifiera: curl POST start -> tjänsten lyssnar, POST stop -> tyst; POST mot ephemeral -> 400.
+
+- ID: `01KY7XRS96RVBS8MMBNT3FC7C8`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] svc install: generera systemd user-unit för ett projekt
+
+Del av TASK-354. Nytt lokalt CLI-subkommando: svc install <projekt> --cmd '<startkommando>' --cwd <katalog> [--port N]. Genererar ~/.config/systemd/user/<projekt>.service från en mall (WorkingDirectory, ExecStart, ev. Restart=on-failure), kör 'systemctl --user daemon-reload', och registrerar/uppdaterar posten i portalen med kind='systemd' och unit='<projekt>.service'.
+
+KRITISKT för säkerheten: kommandot bakas in i unit-filen HÄR, via lokalt CLI - det får ALDRIG POST:as till ett HTTP-endpoint för exekvering. Portalen lär sig bara unit-NAMNET.
+
+Klart när: svc install skapar en giltig unit + DB-post; systemctl --user start <unit> funkar. Verifiera: kör svc install mot ett testprojekt, kontrollera unit-filen, starta via systemctl, curl:a porten.
+
+- ID: `01KY7XRS7Y8B7HY1GEA3WEBN1V`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] Engångsstädning: spök-portalposter + gamlatidtabeller-dubblett
+
+Del av TASK-354 (kan göras direkt, oberoende av resten). Ta bort tre spök-portalposter (portal-8002/8007/8009, gamla självregistreringar från liggarimport) och dubbletten gamlatidtabeller-8871 (samma döda pid som 8870). Alla PID verifierat döda 2026-07-23.
+
+Klart när: svc list visar inte längre dessa fyra. Verifiera: curl /api/services | grep saknar dem.
+
+- ID: `01KY7XQVEG851YKBBTR9B7KCZG`
+- Type: chore
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] Utgången/saknad delning visar rå JSON istället för snygg felsida
+
+GET /share/{uid}/... för en delning som gått ut eller inte finns svarar med rå JSON: {"detail":"Delningen finns inte eller har gått ut."}. Bör rendera en enkel HTML-felsida (svensk, icke-teknisk, portalens palett) för denna användarvända route istället för JSON. Gäller sannolikt även andra HTML-vända GET-routes.
+
+- ID: `01KY5SSDGM96E788V68K4J5P9N`
+- Type: bug
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] Todos-vyn blev spretig - fundera på bättre överblick
+
+Rasmus använder mest backlog-CLI direkt. Portalens todos-sektion på förstasidan känns spretig med många öppna tasks. Idéer att utvärdera: visa bara blockerade tasks, ev. i en gemensam lista över projekt istället för per-projekt. Bör resoneras kring VAD portalens todos-vy ska göra som CLI:t inte gör (annars ta bort/banta den).
+
+- ID: `01KY4691RJJXD34JXF430NCD9H`
+- Type: improvement
+- Actor: ai:claude-code
 
 ---
 
