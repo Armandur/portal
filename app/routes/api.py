@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app import backlog
 from app import database as db
+from app import testruns
 from app.config import (
     LOG_TAIL_LINES, PORT_RANGE_END, PORT_RANGE_START, PORTAL_BASE_URL,
     PORTAL_PORT, SERVICE_HOST, SHARE_MAX_BYTES, SHARE_TTL_MINUTES,
@@ -428,3 +429,33 @@ def delete_theme(name: str):
     if not db.delete_theme(name):
         raise HTTPException(404, f"Inget tema med namnet '{name}' finns.")
     return {"status": "borttagen", "name": name}
+
+
+# --- Testsessioner (prototyp, TASK-803 i infra) ------------------------------
+
+
+class TestItemUpdate(BaseModel):
+    status: Literal["otestad", "ok", "fel", "hoppad"]
+    note: str | None = None
+
+
+@router.get("/test-sessions")
+def list_test_sessions():
+    """Alla testsessioner med framsteg - agentens ingång när Rasmus säger klart."""
+    return {"sessions": testruns.list_sessions()}
+
+
+@router.get("/test/{slug}")
+def get_test_session(slug: str):
+    session = testruns.get_session(slug)
+    if session is None:
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return session
+
+
+@router.post("/test/{slug}/items/{position}")
+def set_test_item(slug: str, position: int, payload: TestItemUpdate):
+    session = testruns.set_status(slug, position, payload.status, payload.note)
+    if session is None:
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return session

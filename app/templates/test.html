@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ session.title }} - testlista</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/tokens.css">
+  <style>
+    :root {
+      --status-ok: #2e9e4f;
+      --status-fel: #c62828;
+      --status-hoppad: #b58900;
+      /* Höjden på den sticky framstegsraden. Sätts om från JS efter render och
+         vid resize - allt som scrollas fram måste hålla sig undan den, annars
+         hamnar det bakom. Värdet här är bara en rimlig startgissning. */
+      --sticky-h: 3.25rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --status-ok: #4cb96b; --status-fel: #e05a5a; --status-hoppad: #d4a017; }
+    }
+
+    .progress-wrap { position: sticky; top: 0; z-index: 10;
+      background: var(--pico-background-color); padding: .6rem 0 .4rem;
+      border-bottom: 1px solid var(--pico-muted-border-color); }
+    .progress-bar { height: .5rem; border-radius: .25rem;
+      background: var(--pico-muted-border-color); overflow: hidden; }
+    .progress-bar > span { display: block; height: 100%; background: var(--pico-primary); }
+    .counts { display: flex; gap: .8rem; flex-wrap: wrap; font-size: .85rem; }
+    .counts b { font-variant-numeric: tabular-nums; }
+
+    .item { border: 1px solid var(--pico-muted-border-color); border-radius: .5rem;
+      padding: .7rem .8rem; margin-bottom: .6rem;
+      scroll-margin: calc(var(--sticky-h) + 1rem) 0 3rem; }
+    .item[data-status="ok"]      { border-left: 4px solid var(--status-ok); }
+    .item[data-status="fel"]     { border-left: 4px solid var(--status-fel); }
+    .item[data-status="hoppad"]  { border-left: 4px solid var(--status-hoppad); }
+    .item[data-status="otestad"] { border-left: 4px solid transparent; }
+    .item.klar .body { opacity: .55; }
+
+    /* Aktiv punkt: den piltangenterna står på. Ring + bakgrund, inte bara
+       kantfärg, så den syns även när punkten redan har en statusfärg. */
+    .item.aktiv {
+      box-shadow: 0 0 0 2px var(--pico-primary);
+      background: color-mix(in srgb, var(--pico-primary) 7%, transparent);
+    }
+    .item.aktiv .num::before { content: "\25B8 "; color: var(--pico-primary); }
+
+    .item-head { display: flex; gap: .5rem; align-items: baseline; }
+    .num { font-variant-numeric: tabular-nums; color: var(--pico-muted-color);
+      font-size: .85rem; min-width: 2.2rem; }
+    .body { margin: 0; }
+
+    /* Knapparna ska gå att träffa med tummen: 44px är Apples/Googles miniminorm */
+    .actions { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
+    .actions button { margin: 0; min-height: 44px; min-width: 44px; padding: .4rem .9rem;
+      font-size: .9rem; flex: 1 1 auto; }
+    /* Färgkodade val: grönt ok, rött fel, gult hoppad. Ofärgade knappar visar
+       färgen som kant och text, vald knapp fylls - så både "vilken är vilken"
+       och "vad valde jag" syns utan att läsa etiketten. */
+    .actions button[data-set="ok"],
+    .actions button[data-set="fel"],
+    .actions button[data-set="hoppad"] {
+      background: transparent;
+      border-color: var(--btn-color);
+      color: var(--btn-color);
+    }
+    .actions button[data-set="ok"]     { --btn-color: var(--status-ok); }
+    .actions button[data-set="fel"]    { --btn-color: var(--status-fel); }
+    .actions button[data-set="hoppad"] { --btn-color: var(--status-hoppad); }
+    .actions button[data-set="ok"][aria-pressed="true"],
+    .actions button[data-set="fel"][aria-pressed="true"],
+    .actions button[data-set="hoppad"][aria-pressed="true"] {
+      background: var(--btn-color);
+      color: #fff;
+    }
+    .actions button[aria-pressed="true"] { outline: 2px solid var(--pico-primary); }
+
+    /* Tangentbords- och skrivbordsspecifika delar finns i DOM men är dolda på
+       mobil: genvägsbokstäverna, genvägslistan och breddväxlaren har ingen
+       funktion på en telefon. Slås på i desktop-media-queryn. */
+    .shortcuts,
+    .widthbar { display: none; }
+    .note { margin-top: .5rem; }
+    .note input { margin: 0; font-size: .9rem; }
+    h3.group { margin: 1.6rem 0 .6rem; font-size: 1rem; color: var(--pico-muted-color);
+      scroll-margin-top: calc(var(--sticky-h) + .6rem); }
+    .filters { display: flex; gap: .4rem; flex-wrap: wrap; margin: .6rem 0 1rem; }
+    .filters button { margin: 0; min-height: 40px; padding: .3rem .8rem; font-size: .85rem;
+      flex: 0 1 auto; }
+    @media (max-width: 480px) {
+      .actions button { flex: 1 1 40%; }
+    }
+
+    /* note-toggle finns bara i DOM för att kunna visas på desktop - osynlig
+       och overksam på mobil så mobillayouten (4 knappar, 2x2) inte påverkas. */
+    .note-toggle { display: none; }
+
+    /* Desktop: kompakta rader i stället för utsträckta fullbreddskontroller,
+       så många fler punkter ryms i en viewport. Mobilreglerna ovan orörs. */
+    @media (min-width: 768px) {
+      header.container { padding-top: .6rem; padding-bottom: .2rem; }
+      header.container hgroup h1 { font-size: 1.4rem; margin-bottom: .15rem; }
+      header.container hgroup p { font-size: .85rem; margin-bottom: 0; }
+
+      .progress-wrap { padding: .5rem 0 .35rem; }
+      .counts { font-size: .8rem; }
+
+      .filters { margin: .5rem 0 .7rem; }
+
+      h3.group { margin: 1rem 0 .35rem; font-size: .9rem; }
+
+      /* Grid i stället för flex: knappkolumnen får en egen spalt och hamnar
+         därmed på samma x-position i varje rad, oavsett hur lång punktens text
+         är. Med flex-wrap hoppade knapparna mellan att ligga bredvid texten och
+         under den, vilket gör en lista på 93 punkter orolig att beta av. */
+      .item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 1rem;
+        row-gap: .3rem;
+        padding: .35rem .7rem;
+        margin-bottom: .25rem;
+      }
+      .item-head { min-width: 0; align-items: baseline; }
+      /* Radlängden hålls kring 70 tecken - full sidbredd ger rader som ögat
+         tappar bort sig i. Knapparna påverkas inte, de sitter i egen spalt. */
+      .body { font-size: .88rem; max-width: 70ch; }
+      .num { font-size: .8rem; min-width: 1.8rem; }
+
+      .actions {
+        margin-top: 0;
+        flex-wrap: nowrap;
+        gap: .3rem;
+      }
+      .actions button {
+        flex: 0 0 auto;
+        min-height: 1.9rem;
+        min-width: 0;
+        padding: .25rem .65rem;
+        font-size: .78rem;
+        white-space: nowrap;
+      }
+      .note-toggle {
+        display: inline-flex;
+        align-items: center;
+        color: var(--pico-muted-color);
+      }
+
+
+      /* Breddläge: styr hur brett hela listan får bli. Smalt läge ger en
+         tajtare kolumn att svepa ögat längs; brett utnyttjar stora skärmar.
+         Valet sparas i localStorage. */
+      .widthbar { display: flex; gap: .4rem; align-items: center; margin-left: auto; }
+      .widthbar button { margin: 0; min-height: 32px; padding: .2rem .6rem;
+        font-size: .78rem; }
+      /* Värdena måste ligga UNDER Picos egen container-bredd, annars vinner de
+         på specificitet och ett "smalare" läge blir i praktiken bredare. */
+      body[data-width="smal"]   main.container { max-width: 52rem; margin-inline: auto; }
+      body[data-width="mellan"] main.container { max-width: 68rem; margin-inline: auto; }
+      /* bred = Picos egen container-bredd, ingen extra begränsning */
+
+      .shortcuts { display: block; font-size: .78rem;
+        color: var(--pico-muted-color); margin: 0 0 .7rem; }
+
+      /* Fyrkantiga rutor i stället för Picos runda pillerform, och färgade för
+         de genvägar som motsvarar en färgad knapp - grå för resten. */
+      .shortcuts kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.5em;
+        height: 1.5em;
+        margin: 0 .1em;
+        padding: 0 .25em;
+        border: 1px solid currentColor;
+        border-radius: .25em;
+        background: transparent;
+        color: var(--pico-muted-color);
+        font-size: .95em;
+        font-weight: 600;
+        line-height: 1;
+        vertical-align: -.2em;
+      }
+      .shortcuts kbd.k-ok     { color: var(--status-ok); }
+      .shortcuts kbd.k-fel    { color: var(--status-fel); }
+      .shortcuts kbd.k-hoppad { color: var(--status-hoppad); }
+
+      /* Kommentarfältet är undanstoppat som default och visas bara när det
+         behövs: redan har text, punkten är felmarkerad, eller manuellt öppnat. */
+      .note {
+        grid-column: 1 / -1;
+        margin-top: .15rem;
+        display: none;
+      }
+      .item.note-open .note,
+      .item[data-status="fel"] .note,
+      .item:focus-within .note {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <hgroup>
+      <h1>{{ session.title }}</h1>
+      <p>
+        {% if session.task_ref %}{{ session.task_ref }}{% if session.project %} i {{ session.project }}{% endif %} - {% endif %}
+        testlista, {{ session.summary.total }} punkter
+      </p>
+    </hgroup>
+  </header>
+
+  <main class="container">
+    <div class="progress-wrap">
+      <div class="progress-bar"><span id="bar" style="width: {{ session.summary.procent }}%"></span></div>
+      <div class="counts" style="margin-top:.4rem">
+        <span><b id="c-avklarat">{{ session.summary.avklarat }}</b>/<b>{{ session.summary.total }}</b> avklarade</span>
+        <span>ok: <b id="c-ok">{{ session.summary.ok }}</b></span>
+        <span>fel: <b id="c-fel">{{ session.summary.fel }}</b></span>
+        <span>hoppade: <b id="c-hoppad">{{ session.summary.hoppad }}</b></span>
+      </div>
+    </div>
+
+    <div class="filters">
+      <button class="secondary" data-filter="alla" aria-pressed="true">Alla</button>
+      <button class="secondary outline" data-filter="otestad">Bara otestade</button>
+      <button class="secondary outline" data-filter="fel">Bara fel</button>
+      <div class="widthbar">
+        <button class="secondary outline" data-width="smal">Smal</button>
+        <button class="secondary outline" data-width="mellan">Mellan</button>
+        <button class="secondary outline" data-width="bred">Bred</button>
+      </div>
+    </div>
+
+    <p class="shortcuts">
+      <kbd>&darr;</kbd><kbd>&uarr;</kbd> eller <kbd>j</kbd><kbd>k</kbd> flyttar &middot;
+      <kbd>Ctrl</kbd>+ desamma byter sektion &middot;
+      <kbd class="k-ok">o</kbd> ok &middot;
+      <kbd class="k-fel">f</kbd> funkar inte &middot;
+      <kbd class="k-hoppad">h</kbd> hoppa &middot;
+      <kbd>u</kbd> ångra &middot; <kbd>c</kbd> kommentar &middot; <kbd>Esc</kbd> lämnar fältet
+    </p>
+
+    {% set ns = namespace(prev=None, grupp=0) %}
+    {% for item in session["items"] %}
+      {% if item.heading != ns.prev %}
+        {% set ns.grupp = ns.grupp + 1 %}
+        <h3 class="group" data-grupp="{{ ns.grupp }}">{{ item.heading or "Punkter" }}</h3>
+        {% set ns.prev = item.heading %}
+      {% endif %}
+      <article class="item {% if item.status != 'otestad' %}klar{% endif %}{% if item.note %} note-open{% endif %}"
+               data-pos="{{ item.position }}" data-status="{{ item.status }}"
+               data-grupp="{{ ns.grupp }}">
+        <div class="item-head">
+          <span class="num">{{ item.position }}.</span>
+          <p class="body">{{ item.body }}</p>
+        </div>
+        <div class="actions">
+          <button class="secondary" data-set="ok"      aria-pressed="{{ 'true' if item.status == 'ok' else 'false' }}">Ok</button>
+          <button class="secondary" data-set="fel"     aria-pressed="{{ 'true' if item.status == 'fel' else 'false' }}">Funkar inte</button>
+          <button class="secondary" data-set="hoppad"  aria-pressed="{{ 'true' if item.status == 'hoppad' else 'false' }}">Hoppa</button>
+          {# Ångra är inte ett val utan en återställning - markeras aldrig som aktiv #}
+          <button class="secondary outline" data-set="otestad" aria-pressed="false">Ångra</button>
+          {# Bara synlig/verksam på desktop (se CSS) - visar/döljer kommentarfältet #}
+          <button type="button" class="secondary outline note-toggle" title="Kommentar">Kommentar</button>
+        </div>
+        <div class="note">
+          <input type="text" placeholder="Kommentar (sparas när du lämnar fältet)"
+                 value="{{ item.note or '' }}">
+        </div>
+      </article>
+    {% endfor %}
+  </main>
+
+  <script>
+    const SLUG = {{ session.slug | tojson }};
+
+    async function save(pos, status, note) {
+      const res = await fetch(`/api/test/${SLUG}/items/${pos}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status, note}),
+      });
+      if (!res.ok) { alert("Kunde inte spara punkten. Ladda om sidan."); return null; }
+      return (await res.json()).summary;
+    }
+
+    function paintSummary(s) {
+      if (!s) return;
+      document.getElementById("bar").style.width = s.procent + "%";
+      document.getElementById("c-avklarat").textContent = s.avklarat;
+      document.getElementById("c-ok").textContent = s.ok;
+      document.getElementById("c-fel").textContent = s.fel;
+      document.getElementById("c-hoppad").textContent = s.hoppad;
+    }
+
+    document.querySelectorAll(".item").forEach(item => {
+      const pos = item.dataset.pos;
+      const noteEl = item.querySelector(".note input");
+
+      item.querySelectorAll("[data-set]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const status = btn.dataset.set;
+          const s = await save(pos, status, noteEl.value);
+          item.dataset.status = status;
+          item.classList.toggle("klar", status !== "otestad");
+          item.querySelectorAll("[data-set]").forEach(b =>
+            b.setAttribute("aria-pressed",
+              b === btn && b.dataset.set !== "otestad" ? "true" : "false"));
+          paintSummary(s);
+          applyFilter();
+        });
+      });
+
+      noteEl.addEventListener("blur", async () => {
+        paintSummary(await save(pos, item.dataset.status, noteEl.value));
+      });
+
+      const noteToggle = item.querySelector(".note-toggle");
+      if (noteToggle) {
+        noteToggle.addEventListener("click", () => {
+          item.classList.toggle("note-open");
+          if (item.classList.contains("note-open")) noteEl.focus();
+        });
+      }
+    });
+
+    let filter = "alla";
+    function applyFilter() {
+      document.querySelectorAll(".item").forEach(item => {
+        const vis = filter === "alla" || item.dataset.status === filter;
+        item.style.display = vis ? "" : "none";
+      });
+      // dölj grupprubriker som inte har någon synlig punkt kvar
+      document.querySelectorAll("h3.group").forEach(h => {
+        let n = h.nextElementSibling, any = false;
+        while (n && n.tagName === "ARTICLE") {
+          if (n.style.display !== "none") { any = true; break; }
+          n = n.nextElementSibling;
+        }
+        h.style.display = any ? "" : "none";
+      });
+    }
+
+    document.querySelectorAll("[data-filter]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filter = btn.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach(b => {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+          b.classList.toggle("outline", b !== btn);
+        });
+        applyFilter();
+        // aktiv punkt kan ha filtrerats bort - flytta till första synliga
+        if (aktiv && aktiv.style.display === "none") setAktiv(synliga()[0] || null, false);
+      });
+    });
+
+    // --- Breddläge -----------------------------------------------------------
+
+    const WIDTH_KEY = "portal-testlista-bredd";
+    function setWidth(mode) {
+      document.body.dataset.width = mode;
+      localStorage.setItem(WIDTH_KEY, mode);
+      document.querySelectorAll("[data-width]").forEach(b => {
+        const vald = b.dataset.width === mode;
+        b.setAttribute("aria-pressed", vald ? "true" : "false");
+        b.classList.toggle("outline", !vald);
+      });
+    }
+    document.querySelectorAll("[data-width]").forEach(btn =>
+      btn.addEventListener("click", () => setWidth(btn.dataset.width)));
+    setWidth(localStorage.getItem(WIDTH_KEY) || "mellan");
+
+    // --- Tangentbordsnavigering ----------------------------------------------
+
+    let aktiv = null;
+    const synliga = () =>
+      [...document.querySelectorAll(".item")].filter(i => i.style.display !== "none");
+
+    function setAktiv(item, scrolla = true) {
+      if (aktiv) aktiv.classList.remove("aktiv");
+      aktiv = item;
+      if (!aktiv) return;
+      aktiv.classList.add("aktiv");
+      if (scrolla) aktiv.scrollIntoView({block: "nearest", behavior: "smooth"});
+    }
+
+    function flytta(steg) {
+      const lista = synliga();
+      if (!lista.length) return;
+      const i = aktiv ? lista.indexOf(aktiv) : -1;
+      setAktiv(lista[Math.min(Math.max(i + steg, 0), lista.length - 1)]);
+    }
+
+    // Hoppa mellan sektioner. Nedåt: första punkten i nästa grupp. Uppåt:
+    // början av nuvarande grupp om man står mitt i den, annars föregående
+    // grupps början - samma logik som "föregående spår" i en musikspelare.
+    function flyttaSektion(steg) {
+      const lista = synliga();
+      if (!lista.length) return;
+      const forst = g => lista.find(i => i.dataset.grupp === String(g));
+      const nu = aktiv ? Number(aktiv.dataset.grupp) : Number(lista[0].dataset.grupp);
+      let mal = null;
+
+      if (steg > 0) {
+        mal = lista.find(i => Number(i.dataset.grupp) > nu) || lista[lista.length - 1];
+      } else if (aktiv && aktiv !== forst(nu)) {
+        mal = forst(nu);
+      } else {
+        const tidigare = lista.filter(i => Number(i.dataset.grupp) < nu);
+        mal = tidigare.length ? forst(Number(tidigare[tidigare.length - 1].dataset.grupp))
+                              : lista[0];
+      }
+      if (!mal) return;
+
+      setAktiv(mal, false);
+
+      // Första synliga gruppen: scrolla hela vägen upp så rubrik, framsteg och
+      // filter kommer med, i stället för att stanna vid rubriken.
+      if (mal === lista[0]) {
+        window.scrollTo({top: 0, behavior: "smooth"});
+        return;
+      }
+      // Annars till rubriken, inte punkten - annars ser man inte var man landat
+      const rubrik = document.querySelector(`h3.group[data-grupp="${mal.dataset.grupp}"]`);
+      (rubrik && rubrik.style.display !== "none" ? rubrik : mal)
+        .scrollIntoView({block: "start", behavior: "smooth"});
+    }
+
+    // Klick i en punkt gör den aktiv, så mus och tangentbord inte glider isär
+    document.querySelectorAll(".item").forEach(item =>
+      item.addEventListener("click", () => setAktiv(item, false)));
+
+    document.addEventListener("keydown", e => {
+      const iFalt = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+      if (iFalt) {
+        // I kommentarfältet ska bokstäverna bli text, inte genvägar.
+        if (e.key === "Escape" || e.key === "Enter") document.activeElement.blur();
+        return;
+      }
+      const key = e.key.toLowerCase();
+      const navNer  = key === "arrowdown" || key === "j";
+      const navUpp  = key === "arrowup"   || key === "k";
+
+      // Ctrl + samma tangenter hoppar en hel sektion i stället för en punkt
+      if (e.ctrlKey && !e.metaKey && !e.altKey && (navNer || navUpp)) {
+        e.preventDefault();
+        flyttaSektion(navNer ? 1 : -1);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (navNer) { e.preventDefault(); flytta(1); return; }
+      if (navUpp) { e.preventDefault(); flytta(-1); return; }
+      if (!aktiv) return;
+
+      const genvag = {o: "ok", f: "fel", h: "hoppad", u: "otestad"}[key];
+      if (genvag) {
+        e.preventDefault();
+        aktiv.querySelector(`[data-set="${genvag}"]`).click();
+        return;
+      }
+      if (key === "c") {
+        e.preventDefault();
+        aktiv.classList.add("note-open");
+        aktiv.querySelector(".note input").focus();
+      }
+    });
+
+    // Den sticky framstegsraden täcker det som scrollas fram om inte
+    // scroll-margin matchar dess höjd. Höjden beror på bredd (counts wrappar),
+    // så den mäts i stället för att gissas.
+    function matSticky() {
+      const h = document.querySelector(".progress-wrap").getBoundingClientRect().height;
+      document.documentElement.style.setProperty("--sticky-h", `${Math.round(h)}px`);
+    }
+    matSticky();
+    addEventListener("resize", matSticky);
+
+    setAktiv(synliga()[0] || null, false);
+  </script>
+</body>
+</html>

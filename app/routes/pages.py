@@ -13,6 +13,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 
 from app import database as db
+from app import testruns
 from app.config import BASE_DIR, SERVICE_HOST, SHARE_DIR
 from app.share_render import render_markdown_page
 
@@ -102,3 +103,12 @@ def share_file(uid: str, filename: str, raw: int = 0):
         media_type=share["content_type"] or "application/octet-stream",
         content_disposition_type="inline",
     )
+
+
+@router.get("/test/{slug}", response_class=HTMLResponse)
+def test_session(request: Request, slug: str):
+    """Testlista att beta av (prototyp, TASK-803 i infra)."""
+    session = testruns.get_session(slug)
+    if session is None:
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return templates.TemplateResponse(request, "test.html", {"session": session})

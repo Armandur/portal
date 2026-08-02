@@ -14,6 +14,7 @@ from app.database import clean_expired_shares, init_db, upsert_service
 from app.ledger import import_ledger, write_ledger
 from app.ports import clean_dead_ephemeral_services
 from app.routes import api, pages
+from app import testruns
 
 
 def _register_self() -> None:
@@ -40,6 +41,7 @@ def _register_self() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    testruns.init_schema()
     import_ledger()
     clean_dead_ephemeral_services()
     _register_self()
