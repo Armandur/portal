@@ -8,6 +8,7 @@ lista i en beskrivning lika gärna kan vara utredningspunkter eller ett
 verifieringsprotokoll.
 """
 
+import html
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -290,3 +291,46 @@ def delete_session(slug: str) -> bool:
         return True
     finally:
         conn.close()
+
+
+# Testpunkter innehåller ofta en adress man ska öppna. Texten escapas alltid,
+# och bara de två mönster som matchas här blir taggar - ingen HTML från den som
+# skapar sessionen släpps igenom.
+_MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
+_BARE_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def _anchor(url: str, text: str) -> str:
+    return (
+        f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+        f'rel="noopener">{html.escape(text)}</a>'
+    )
+
+
+def linkify(text: str) -> str:
+    """Escapar texten och gör http(s)-adresser klickbara.
+
+    Stöder både markdown-form, [öppna anmälan](http://...), och rena adresser.
+    Segmenten mellan träffarna escapas, så < och & i brödtexten blir text och
+    inte markup.
+    """
+    ut: list[str] = []
+    pos = 0
+
+    def skriv_med_bara_urler(segment: str) -> None:
+        p = 0
+        for m in _BARE_URL_RE.finditer(segment):
+            ut.append(html.escape(segment[p:m.start()]))
+            url = m.group(0).rstrip(".,;:!?")
+            ut.append(_anchor(url, url))
+            # skiljetecken som råkade följa med adressen hör till meningen
+            ut.append(html.escape(m.group(0)[len(url):]))
+            p = m.end()
+        ut.append(html.escape(segment[p:]))
+
+    for m in _MD_LINK_RE.finditer(text):
+        skriv_med_bara_urler(text[pos:m.start()])
+        ut.append(_anchor(m.group(2), m.group(1)))
+        pos = m.end()
+    skriv_med_bara_urler(text[pos:])
+    return "".join(ut)

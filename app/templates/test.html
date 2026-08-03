@@ -38,6 +38,9 @@
     .item[data-status="hoppad"]  { border-left: 4px solid var(--status-hoppad); }
     .item[data-status="otestad"] { border-left: 4px solid transparent; }
     .item.klar .body { opacity: .55; }
+    /* Länk i punkttexten: understruken så den syns även när punkten är
+       avklarad och texten dämpats. */
+    .body a { text-decoration: underline; }
 
     /* Aktiv punkt: den piltangenterna står på. Ring + bakgrund, inte bara
        kantfärg, så den syns även när punkten redan har en statusfärg. */
@@ -257,7 +260,7 @@
                data-grupp="{{ ns.grupp }}">
         <div class="item-head">
           <span class="num">{{ item.position }}.</span>
-          <p class="body">{{ item.body }}</p>
+          <p class="body">{{ item.body | linkify | safe }}</p>
         </div>
         <div class="actions">
           <button class="secondary" data-set="ok"      aria-pressed="{{ 'true' if item.status == 'ok' else 'false' }}">Ok</button>

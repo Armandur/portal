@@ -19,6 +19,9 @@ from app.share_render import render_markdown_page
 
 router = APIRouter()
 templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
+# Testpunkter får innehålla adresser att klicka på. Filtret escapar texten och
+# gör bara http(s)-mönster till länkar - ingen HTML från indata släpps igenom.
+templates.env.filters["linkify"] = testruns.linkify
 
 
 def _render_markdown(text: str) -> str:
