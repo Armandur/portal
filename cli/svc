@@ -122,6 +122,8 @@ def _service_body(args):
         body["unit"] = args.unit
     if getattr(args, "autostart", None) is not None:
         body["autostart"] = args.autostart
+    if getattr(args, "backlog_project", None) is not None:
+        body["backlog_project"] = args.backlog_project
     return body
 
 
@@ -345,6 +347,12 @@ def _add_common_fields(p):
         help="Tjänsttyp: ephemeral, systemd eller docker",
     )
     p.add_argument("--unit", help="Systemd-unit eller containernamn")
+    p.add_argument(
+        "--backlog-project",
+        help="Projektnamnet i backlog, om det skiljer sig från portalens "
+             "(t.ex. anmalningssystem i portalen, hemslojd i backlog). "
+             "Styr vilka todos och testlistor som visas på kortet.",
+    )
     p.add_argument(
         "--autostart",
         action=argparse.BooleanOptionalAction,

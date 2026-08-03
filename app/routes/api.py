@@ -50,6 +50,9 @@ class ServiceIn(BaseModel):
     unit: str | None = None
     autostart: bool = False
     log_path: str | None = None
+    # Backlog-projektet kan heta något annat än portalens projektnamn. Sätts
+    # när de skiljer sig, så todos och testlistor hittar rätt kort.
+    backlog_project: str | None = None
 
 
 class ServicePatch(BaseModel):
@@ -65,6 +68,7 @@ class ServicePatch(BaseModel):
     unit: str | None = None
     autostart: bool | None = None
     log_path: str | None = None
+    backlog_project: str | None = None
 
 
 class ReserveIn(BaseModel):

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS services (
     unit TEXT,
     autostart INTEGER DEFAULT 0,
     log_path TEXT,
+    backlog_project TEXT,
     created_at TEXT,
     updated_at TEXT
 );
@@ -104,6 +105,7 @@ def init_db() -> None:
         _ensure_column(conn, "services", "unit", "TEXT")
         _ensure_column(conn, "services", "autostart", "INTEGER DEFAULT 0")
         _ensure_column(conn, "services", "log_path", "TEXT")
+        _ensure_column(conn, "services", "backlog_project", "TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -161,15 +163,15 @@ def create_service(data: dict) -> dict:
             """INSERT INTO services
                (name, project, port, pid, description, url_path, docs_path,
                 docs_md, started_by, kind, unit, autostart, log_path,
-                created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                backlog_project, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["name"], data["project"], data.get("port"), data.get("pid"),
                 data.get("description"), data.get("url_path") or "/",
                 data.get("docs_path"), data.get("docs_md"),
                 data.get("started_by"), data.get("kind") or "ephemeral",
                 data.get("unit"), int(bool(data.get("autostart"))),
-                data.get("log_path"),
+                data.get("log_path"), data.get("backlog_project"),
                 data.get("created_at") or ts, ts,
             ),
         )
@@ -186,7 +188,7 @@ def update_service(name: str, fields: dict) -> dict | None:
     """Uppdaterar angivna fält. Returnerar tjänsten eller None om den saknas."""
     allowed = {"project", "port", "pid", "description", "url_path",
                "docs_path", "docs_md", "started_by", "kind", "unit",
-               "autostart", "log_path"}
+               "autostart", "log_path", "backlog_project"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_service(name)

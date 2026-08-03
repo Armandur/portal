@@ -108,6 +108,13 @@ function renderServiceRow(svc, showLabel) {
 // finns - då utelämnas raden och fylls i vid nästa rendering.
 let todoCounts = new Map();
 
+// Backlog-projektet kan heta något annat än portalens projektnamn
+// (anmalningssystem i portalen, hemslojd i backlog). Tjänsten kan bära
+// backlog_project; utan det gäller portalens namn som förut.
+function backlogKey(services) {
+  return services[0].backlog_project || services[0].project;
+}
+
 function renderProjectTodos(project) {
   const counts = todoCounts.get(project);
   if (!counts || !counts.open) return "";
@@ -162,8 +169,8 @@ function renderProjectCard(services) {
       </div>
       ${portLine}
       ${rows}
-      ${renderProjectTodos(services[0].project)}
-      ${renderProjectTests(services[0].project)}
+      ${renderProjectTodos(backlogKey(services))}
+      ${renderProjectTests(backlogKey(services))}
     </article>`;
 }
 
