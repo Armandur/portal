@@ -133,6 +133,36 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 }
 .card-test .muted { white-space: nowrap; font-size: 0.8rem; flex: 0 0 auto; }
 
+/* Sorterbara kolumnrubriker: rubriken ÄR knappen, så hela cellen känns klickbar
+   utan att tabellen får extra chrome. */
+th .sort-btn {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}
+th .sort-btn:hover { text-decoration: underline; }
+th.sorted { color: var(--pico-primary); }
+
+/* Beskrivningskolumnen ryms inte i mobil - fem kolumner blir en tvättbräda. */
+@media (max-width: 600px) {
+  .hide-mobile { display: none; }
+}
+
+/* Breda tabeller scrollar i sig själva. Utan detta sköt delningstabellen ut
+   hela sidan i sidled vid 390px (556px sidbredd), vilket fanns redan före
+   sorteringen men syns tydligare med en kolumn till. */
+.table-scroll { overflow-x: auto; }
+.table-scroll table { margin-bottom: 0; }
+/* Storlek och tidsstämplar ska inte brytas mitt itu ("156.7" / "KB") - de är
+   ett värde. Tabellen scrollar hellre än att radbryta dem. */
+#shares td:nth-child(3), #shares td:nth-child(4), #shares td:nth-child(5),
+#shares th:nth-child(3), #shares th:nth-child(4), #shares th:nth-child(5) {
+  white-space: nowrap;
+}
+
 /* Todo-överblicken: siffrorna högerställs mot varandra */
 #todos .num { text-align: right; }
 

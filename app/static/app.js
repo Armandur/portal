@@ -185,31 +185,100 @@ function humanSize(n) {
   return i === 0 ? `${n} B` : `${n.toFixed(1)} ${units[i]}`;
 }
 
+// Sorteringen lever mellan omrenderingarna (sektionen hämtas var 30:e sekund),
+// så ett valt läge inte nollställs medan man tittar på listan.
+let shareSort = { key: "created_at", dir: "desc" };
+// Senast hämtade delningar, så en sortering kan rendera om utan nytt API-anrop.
+let currentShares = [];
+
+const SHARE_COLS = [
+  { key: "filename", label: "Fil" },
+  { key: "description", label: "Beskrivning", hideMobile: true },
+  { key: "size", label: "Storlek", num: true },
+  { key: "created_at", label: "Skapad" },
+  { key: "expires_at", label: "Går ut" },
+];
+
+function sortShares(shares) {
+  const { key, dir } = shareSort;
+  const mult = dir === "asc" ? 1 : -1;
+  const col = SHARE_COLS.find((c) => c.key === key);
+  return [...shares].sort((a, b) => {
+    const x = a[key];
+    const y = b[key];
+    // Tomma värden hamnar sist oavsett riktning: "aldrig" och "-" är inte
+    // ett värde som hör hemma i toppen bara för att man vänder ordningen.
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    if (col && col.num) return (x - y) * mult;
+    return String(x).localeCompare(String(y), "sv") * mult;
+  });
+}
+
+function shortDate(iso) {
+  if (!iso) return null;
+  // Kort form: listan är bred nog ändå, och sekunder säger inget här.
+  return new Date(iso).toLocaleString("sv-SE", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 function renderShares(shares) {
+  currentShares = shares;
   if (!shares.length) {
     return '<p class="muted">Inga aktiva delningar.</p>';
   }
-  const rows = shares
+  const head = SHARE_COLS.map((c) => {
+    const aktiv = shareSort.key === c.key;
+    const pil = aktiv ? (shareSort.dir === "asc" ? " \u2191" : " \u2193") : "";
+    return `<th class="${c.hideMobile ? "hide-mobile " : ""}${aktiv ? "sorted" : ""}"
+                aria-sort="${aktiv ? (shareSort.dir === "asc" ? "ascending" : "descending") : "none"}">
+      <button type="button" class="sort-btn" data-sort="${c.key}">${c.label}${pil}</button>
+    </th>`;
+  }).join("");
+
+  const rows = sortShares(shares)
     .map(
       (s) => `
       <tr>
         <td><a href="${escapeHtml(s.url)}">${escapeHtml(s.filename)}</a></td>
-        <td>${s.description ? escapeHtml(s.description) : '<span class="muted">-</span>'}</td>
+        <td class="hide-mobile">${s.description ? escapeHtml(s.description) : '<span class="muted">-</span>'}</td>
         <td>${escapeHtml(humanSize(s.size))}</td>
+        <td>${escapeHtml(shortDate(s.created_at) || "-")}</td>
         <td>${
           s.expires_at
-            ? escapeHtml(new Date(s.expires_at).toLocaleString("sv-SE"))
+            ? escapeHtml(shortDate(s.expires_at))
             : '<span class="muted">aldrig</span>'
         }</td>
       </tr>`
     )
     .join("");
+  // Tabellen scrollar i sin egen container i stället för att spilla ut sidan.
+  // Fem kolumner med datum får inte plats vid 390px hur man än kortar dem.
   return `
-    <table>
-      <thead><tr><th>Fil</th><th>Beskrivning</th><th>Storlek</th><th>Går ut</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    <div class="table-scroll">
+      <table>
+        <thead><tr>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
+
+// Delegerad lyssnare: tabellen byggs om var 30:e sekund, så knapparna kan inte
+// få varsin lyssnare vid render.
+document.getElementById("shares").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-sort]");
+  if (!btn) return;
+  const key = btn.dataset.sort;
+  // Samma kolumn igen vänder ordningen; ny kolumn börjar fallande, vilket är
+  // vad man vill för datum och storlek och oftast oskadligt för text.
+  shareSort = key === shareSort.key
+    ? { key, dir: shareSort.dir === "asc" ? "desc" : "asc" }
+    : { key, dir: "desc" };
+  document.getElementById("shares").innerHTML = renderShares(currentShares);
+});
 
 function renderUnregistered(ports) {
   const unregistered = ports.listening.filter((p) => !p.registered);
