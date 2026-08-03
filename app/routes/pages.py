@@ -105,6 +105,14 @@ def share_file(uid: str, filename: str, raw: int = 0):
     )
 
 
+@router.get("/test", response_class=HTMLResponse)
+def test_sessions_index(request: Request):
+    """Alla testlistor med framsteg. Filtreras klientsidan (öppna/stängda/alla)."""
+    return templates.TemplateResponse(
+        request, "tests.html", {"sessions": testruns.list_sessions()}
+    )
+
+
 @router.get("/test/{slug}", response_class=HTMLResponse)
 def test_session(request: Request, slug: str):
     """Testlista att beta av (prototyp, TASK-803 i infra)."""

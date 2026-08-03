@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testlistor - Portal</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/tokens.css">
+  <style>
+    :root { --status-ok: #2e9e4f; --status-fel: #c62828; --status-hoppad: #b58900; }
+    @media (prefers-color-scheme: dark) {
+      :root { --status-ok: #4cb96b; --status-fel: #e05a5a; --status-hoppad: #d4a017; }
+    }
+
+    .filters { display: flex; gap: .4rem; flex-wrap: wrap; margin: .6rem 0 1.2rem; }
+    .filters button { margin: 0; min-height: 40px; padding: .3rem .8rem;
+      font-size: .85rem; flex: 0 1 auto; }
+
+    .sess { border: 1px solid var(--pico-muted-border-color); border-radius: .5rem;
+      padding: .8rem .9rem; margin-bottom: .7rem; }
+    .sess.stangd { opacity: .62; }
+    .sess-head { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+    .sess-head h2 { font-size: 1.05rem; margin: 0; }
+    .sess-head a { text-decoration: none; }
+    .meta { font-size: .82rem; color: var(--pico-muted-color); }
+
+    .bar { height: .45rem; border-radius: .25rem; margin: .5rem 0 .35rem;
+      background: var(--pico-muted-border-color); overflow: hidden; display: flex; }
+    .bar > span { display: block; height: 100%; }
+    .bar .b-ok     { background: var(--status-ok); }
+    .bar .b-fel    { background: var(--status-fel); }
+    .bar .b-hoppad { background: var(--status-hoppad); }
+
+    .counts { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .82rem; }
+    .counts b { font-variant-numeric: tabular-nums; }
+    .dot { display: inline-block; width: .55em; height: .55em; border-radius: 50%;
+      margin-right: .3em; vertical-align: baseline; }
+    .d-ok { background: var(--status-ok); }
+    .d-fel { background: var(--status-fel); }
+    .d-hoppad { background: var(--status-hoppad); }
+
+    .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: .25rem;
+      border: 1px solid currentColor; }
+    .badge.oppen { color: var(--status-ok); }
+    .badge.stangd { color: var(--pico-muted-color); }
+
+    .tom { color: var(--pico-muted-color); }
+    @media (min-width: 768px) {
+      .sess { padding: .6rem .8rem; margin-bottom: .5rem; }
+      .sess-head h2 { font-size: .98rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <hgroup>
+      <h1>Testlistor</h1>
+      <p>Testpunkter att beta av i stället för i chatten. <a href="/">Till portalen</a></p>
+    </hgroup>
+  </header>
+
+  <main class="container">
+    <div class="filters">
+      <button class="secondary" data-filter="oppna" aria-pressed="true">Öppna</button>
+      <button class="secondary outline" data-filter="stangda">Stängda</button>
+      <button class="secondary outline" data-filter="alla">Alla</button>
+    </div>
+
+    {% if not sessions %}
+      <p class="tom">Inga testlistor än. Skapa en med
+         <code>svc test-session create</code>.</p>
+    {% endif %}
+
+    {% for s in sessions %}
+      {% set m = s.summary %}
+      <article class="sess {% if s.closed_at %}stangd{% endif %}"
+               data-state="{{ 'stangda' if s.closed_at else 'oppna' }}">
+        <div class="sess-head">
+          <h2><a href="/test/{{ s.slug }}">{{ s.title }}</a></h2>
+          <span class="badge {{ 'stangd' if s.closed_at else 'oppen' }}">
+            {{ "stängd" if s.closed_at else "öppen" }}</span>
+          <span class="meta">
+            {% if s.task_ref %}{{ s.task_ref }}{% if s.project %} i {{ s.project }}{% endif %} &middot; {% endif %}
+            {{ s.created_at[:10] }}
+          </span>
+        </div>
+
+        <div class="bar" title="{{ m.ok }} ok, {{ m.fel }} fel, {{ m.hoppad }} hoppade">
+          <span class="b-ok"     style="width: {{ (m.ok     * 100 / m.total) if m.total else 0 }}%"></span>
+          <span class="b-fel"    style="width: {{ (m.fel    * 100 / m.total) if m.total else 0 }}%"></span>
+          <span class="b-hoppad" style="width: {{ (m.hoppad * 100 / m.total) if m.total else 0 }}%"></span>
+        </div>
+
+        <div class="counts">
+          <span><b>{{ m.avklarat }}</b>/<b>{{ m.total }}</b> avklarade</span>
+          <span><i class="dot d-ok"></i>ok <b>{{ m.ok }}</b></span>
+          <span><i class="dot d-fel"></i>fel <b>{{ m.fel }}</b></span>
+          <span><i class="dot d-hoppad"></i>hoppade <b>{{ m.hoppad }}</b></span>
+          {% if m.otestad %}<span>kvar <b>{{ m.otestad }}</b></span>{% endif %}
+        </div>
+      </article>
+    {% endfor %}
+
+    <p class="tom" id="tomt-filter" hidden>Inga testlistor i den vyn.</p>
+  </main>
+
+  <script>
+    let filter = "oppna";
+    function applyFilter() {
+      let synliga = 0;
+      document.querySelectorAll(".sess").forEach(el => {
+        const vis = filter === "alla" || el.dataset.state === filter;
+        el.style.display = vis ? "" : "none";
+        if (vis) synliga++;
+      });
+      const tomt = document.getElementById("tomt-filter");
+      tomt.hidden = synliga > 0 || !document.querySelector(".sess");
+    }
+    document.querySelectorAll("[data-filter]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filter = btn.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach(b => {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+          b.classList.toggle("outline", b !== btn);
+        });
+        applyFilter();
+      });
+    });
+    applyFilter();
+  </script>
+</body>
+</html>

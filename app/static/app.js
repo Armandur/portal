@@ -122,6 +122,23 @@ function renderProjectTodos(project) {
     </div>`;
 }
 
+// Öppna testlistor per projekt, fylld när /api/test-sessions landar. Samma
+// mönster som todoCounts: kortet kan renderas innan siffrorna finns.
+let testsByProject = new Map();
+
+function renderProjectTests(project) {
+  const sessions = testsByProject.get(project);
+  if (!sessions || !sessions.length) return "";
+  const rader = sessions
+    .map((s) => {
+      const m = s.summary;
+      return `<a href="/test/${encodeURIComponent(s.slug)}">${escapeHtml(s.title)}</a>
+              <span class="muted">${m.avklarat}/${m.total}${m.fel ? `, ${m.fel} fel` : ""}</span>`;
+    })
+    .join("<br>");
+  return `<div class="card-todos">${rader}</div>`;
+}
+
 function renderProjectCard(services) {
   const multi = services.length > 1;
   const headStatus = multi ? aggregateStatus(services) : services[0].status;
@@ -142,6 +159,7 @@ function renderProjectCard(services) {
       ${portLine}
       ${rows}
       ${renderProjectTodos(services[0].project)}
+      ${renderProjectTests(services[0].project)}
     </article>`;
 }
 
@@ -275,6 +293,18 @@ async function settleService(service) {
 
 // Varje sektion hämtas och renderas oberoende: ett fel i en fetch fastnar
 // inte de andra korten i "Laddar...", och felet pekar ut rätt sektion.
+// Testlistorna har ingen egen sektion på framsidan - de visas på projektens
+// kort. Bara öppna listor: en stängd hör hemma i /test, inte på kortet.
+function renderTestSessions(data) {
+  const oppna = (data.sessions || []).filter((s) => !s.closed_at && s.project);
+  testsByProject = new Map();
+  for (const s of oppna) {
+    if (!testsByProject.has(s.project)) testsByProject.set(s.project, []);
+    testsByProject.get(s.project).push(s);
+  }
+  return null;
+}
+
 const SECTIONS = [
   {
     id: "services",
@@ -283,6 +313,7 @@ const SECTIONS = [
     render: renderServices,
   },
   { id: "todos", url: "/api/todos", label: "todos", render: renderTodos },
+  { id: null, url: "/api/test-sessions", label: "testlistor", render: renderTestSessions },
   { id: "shares", url: "/api/shares", label: "delningar", render: renderShares },
   { id: "unregistered", url: "/api/ports", label: "portar", render: renderUnregistered },
 ];
@@ -381,13 +412,18 @@ async function refresh() {
   let servicesRendered = false;
   await Promise.all(
     SECTIONS.map(async (sec) => {
-      const el = document.getElementById(sec.id);
+      // sec.id === null: sektionen har ingen egen plats i DOM utan fyller bara
+      // data åt kortvyn (testlistorna). Då finns inget element att skriva i.
+      const el = sec.id ? document.getElementById(sec.id) : null;
       try {
         const data = await apiFetch(sec.url);
-        el.innerHTML = sec.id === "services" ? renderServices(data) : sec.render(data);
+        const html = sec.id === "services" ? renderServices(data) : sec.render(data);
+        if (el) el.innerHTML = html;
         if (sec.id === "services") servicesRendered = true;
       } catch (err) {
-        el.innerHTML = `<p class="muted">Kunde inte hämta ${escapeHtml(sec.label)}: ${escapeHtml(err.message)}</p>`;
+        if (el) {
+          el.innerHTML = `<p class="muted">Kunde inte hämta ${escapeHtml(sec.label)}: ${escapeHtml(err.message)}</p>`;
+        }
       }
     })
   );
@@ -395,7 +431,7 @@ async function refresh() {
   // Rendera om korten en gång när båda finns, annars saknas räknaren tills
   // nästa varv. Bara om services-hämtningen lyckades - annars skulle ett
   // felmeddelande skrivas över med inaktuella kort.
-  if (servicesRendered && todoCounts.size) {
+  if (servicesRendered && (todoCounts.size || testsByProject.size)) {
     document.getElementById("services").innerHTML = renderServices(currentServices);
   }
   document.getElementById("refresh-info").textContent =
