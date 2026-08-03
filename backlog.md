@@ -1,12 +1,46 @@
 # Backlog Export
 
-## [P2][todo] [portal] Lat städning av efemära döda tjänster (löser registeröverflödet)
+## [P2][todo] [portal] Projektkortens todo- och testlänkar matchar inte backlog-projektnamn
 
-Del av TASK-354. Idag städas reservationer/delningar lazily via TTL men tjänster aldrig - listan växer monotont (14 av 26 döda). Inför samma lata mönster: en post med kind='ephemeral' vars PID är död OCH vars port är tyst reaps vid list_services() och vid lifespan-start (jfr clean_expired_shares).
+Todo från Rasmus 2026-08-03: pågår-notisen som finns i todo-listan borde också synas på korten. Vid undersökning visade det sig vara ett matchningsproblem, inte en saknad funktion.
 
-VIKTIGT: managed-tjänster (kind in systemd/docker) städas ALDRIG tyst - en nere managed = larm, inte skräp.
+BADGEN FINNS REDAN. renderProjectTodos i app/static/app.js (~rad 112) renderar '<N> pågår' när counts.doing är satt. Den syns bara aldrig.
 
-Klart när: en död ad-hoc-post försvinner automatiskt vid nästa listning; en managed nere-post ligger kvar. Verifiera: registrera en fejk-ephemeral med död pid, anropa /api/services, posten borta; samma med kind=systemd, posten kvar.
+ROTORSAK: kortet matchar backlog-projektet mot portalens projektnamn med exakt strängjämförelse, och de sammanfaller inte. Vid kontroll 2026-08-03 hade fyra projekt pågående todos - hemslojd (5), duharfagel (1), kt-rss (1), sr-rss (1) - och inget av dem matchar ett kort:
+
+- hemslojd (backlog) vs anmalningssystem (portalen)
+- kt-rss / sr-rss (backlog) vs sverigesradio-rss (portalen)
+- duharfagel har inget kort alls
+
+Det gäller INTE bara doing-badgen: hela todo-raden och de öppna testlistorna på kortet träffas av samma sak. Testlistorna handpatchades 2026-08-03 genom att sätta project=anmalningssystem på sex sessioner, vilket är en lapp, inte en lösning - nästa session som skapas med backlog-projektets namn hamnar fel igen.
+
+FÖRSLAG: en aliasmappning mellan backlog-projekt och portalprojekt. Rimligen ett fält på tjänsten (backlog_project) som sätts via svc register/update, med fallback på exakt namnmatchning som i dag. Då kan både todos och testlistor slå upp rätt kort utan att den som skapar dem behöver känna till portalens namngivning.
+
+Klart när: anmalningssystem-kortet visar '5 pågår' och sina öppna testlistor utan att någon handpatchat project-fältet. Verifiera: svc list visar kortet, /api/todos har doing>0 för det backlog-projekt kortet är kopplat till, och badgen syns i DOM.
+
+- ID: `01KZ3GHNXV8STKT4EEA6C0T52V`
+- Type: bug
+- Actor: ai:claude-opus-5
+
+---
+
+## [P2][done] [portal] Städa döda efemära tjänsteposter automatiskt
+
+## Kontext
+Tjänsteregistret växer monotont eftersom reservationer och delningar städas lazily men tjänsteposter aldrig tas bort. Vid senaste inventeringen var 14 av 26 poster döda. TASK-354 behöver skilja sådant skräp från stoppade managed-tjänster, som ska finnas kvar och kunna startas igen.
+
+## Acceptanskriterier
+- [ ] En post med `kind='ephemeral'` tas bort när dess registrerade PID inte lever och dess port inte lyssnar.
+- [ ] En efemär post tas inte bort om PID fortfarande lever eller om porten fortfarande lyssnar.
+- [ ] En dokumentationspost utan port tas inte bort av städningen.
+- [ ] Poster med `kind='systemd'` eller `kind='docker'` tas aldrig bort automatiskt, oavsett PID- eller portstatus.
+- [ ] Städning körs vid lifespan-start och före eller i samband med `list_services()`.
+- [ ] Borttagning uppdaterar liggaren på samma sätt som annan tjänsteborttagning.
+- [ ] Registrera en fejkad efemär post med död PID och tyst port; nästa `GET /api/services` tar bort den.
+- [ ] Registrera motsvarande systemd-post; nästa listning behåller den.
+
+## Implementationshänvisningar
+Återanvänd mönstret för `clean_expired_shares` och reservationsstädning. Port- och PID-bedömning finns i `app/ports.py`, medan DB-livscykel och liggarskrivning behöver hållas samordnade med `app/database.py` och `app/main.py`. Undvik att hålla en SQLite-transaction öppen medan `ss` körs.
 
 - ID: `01KY7XQVD82XW1K8TKXMDBQKS1`
 - Type: improvement
@@ -14,11 +48,25 @@ Klart när: en död ad-hoc-post försvinner automatiskt vid nästa listning; en 
 
 ---
 
-## [P2][todo] [portal] Schema: kind/unit/autostart på services (grund för katalog)
+## [P2][done] [portal] Utöka tjänsteschemat med supervisor-metadata
 
-Del av TASK-354. Lägg till kolumner på services via guard-mönstret (_ensure_column i init_db, inte _SCHEMA-rebuild): kind TEXT DEFAULT 'ephemeral' (ephemeral|systemd|docker), unit TEXT (unit-/containernamn för managed), autostart INTEGER DEFAULT 0.
+## Kontext
+TASK-354 behöver skilja kortlivade, manuellt startade processer från tjänster som ägs av systemd eller Docker. Utan den skillnaden kan portalen varken behålla stoppade projekt, städa säkert eller begränsa start och stopp till tillåtna resurser.
 
-Klart när: nya kolumner finns och överlever omstart; befintliga rader defaultar till kind='ephemeral'; update_service tillåter de nya fälten (lägg i 'allowed'); Pydantic-modellerna i api.py och CLI-flaggor uppdaterade. Verifiera: uv run python -c 'from app.main import app' + PRAGMA table_info(services) visar kolumnerna.
+## Acceptanskriterier
+- [ ] Tabellen `services` har `kind TEXT DEFAULT 'ephemeral'`, `unit TEXT` och `autostart INTEGER DEFAULT 0`.
+- [ ] Tillåtna värden för `kind` är `ephemeral`, `systemd` och `docker`; ogiltiga API- och CLI-värden avvisas vid systemgränsen.
+- [ ] Befintliga rader får `kind='ephemeral'` och behåller övriga data.
+- [ ] Migreringen är idempotent och fungerar vid upprepade starter.
+- [ ] `create_service` och `update_service` kan skriva de nya fälten.
+- [ ] API-modeller och JSON-svar innehåller fälten.
+- [ ] `svc register` och `svc update` kan ange relevanta supervisor-fält utan att ta emot eller lagra startkommandon.
+- [ ] Import och export av liggaren fortsätter fungera; nya fält behöver inte läggas till i liggarformatet.
+- [ ] `uv run python -c "from app.main import app; print('OK')"` lyckas.
+- [ ] `PRAGMA table_info(services)` visar kolumnerna efter initiering och omstart.
+
+## Implementationshänvisningar
+Lägg kolumnerna både i `_SCHEMA` för nya databaser och som `_ensure_column`-anrop i `init_db()` för befintliga databaser. Uppdatera tillåtna fält i `app/database.py`, Pydantic-modellerna i `app/routes/api.py` och flaggorna i `cli/svc`. Följ befintligt guard-mönster och gör ingen tabell-rebuild för denna ändring.
 
 - ID: `01KY7XQVB4K5CF2CPF2H04QD42`
 - Type: task
@@ -26,16 +74,40 @@ Klart när: nya kolumner finns och överlever omstart; befintliga rader defaulta
 
 ---
 
-## [P2][todo] [portal] Projektkatalog: portalen som startbar katalog over alla projekt (epic)
+## [P2][done] [portal] Gör portalen till en startbar katalog över alla projekt
 
-Skifte i modell: portalen gar fran 'register over vad som kor NU' till en KATALOG over alla projekt. Ett projekt ar en bestaende post som staller sig stilla tills man trycker play. Play/stop proxar en BEFINTLIG supervisor (systemd user-unit / docker) - portalen lagrar aldrig ett startkommando och kor det aldrig sjalv (den binder 0.0.0.0 utan auth -> vore oautentiserad RCE over Tailscale).
+## Kontext
+Portalen behöver utvecklas från ett register över processer som kör just nu till en beständig projektkatalog. Ett registrerat projekt ska finnas kvar när det är stoppat och kunna styras genom en befintlig supervisor.
 
-Karnprinciper:
-- Portalen forblir ett register/UI. systemd/docker ager process-livscykeln.
-- Portalens HTTP-API kan bara starta/stoppa units som redan finns i dess DB (allowlist), aldrig godtyckligt.
-- Kommandot bakas in i unit-filen EN gang via lokalt CLI (svc install), passerar aldrig ett HTTP-endpoint.
+Portalen binder till 0.0.0.0 utan autentisering. Den får därför aldrig lagra eller exekvera godtyckliga startkommandon via HTTP. systemd eller Docker äger processens livscykel, medan portalen endast visar tillstånd och proxar till förregistrerade resurser.
 
-Delas upp i under-tasks (denna ar paraply). Full design: se rapport tmp/tjansteregister-hantering.md i repot samt konversation 2026-07-23. Relaterat: TASK-306 (hur mycket ska portalen gora).
+## Acceptanskriterier
+- [ ] Tjänsteposter skiljer mellan efemära processer och beständiga systemd- eller Docker-tjänster.
+- [ ] Managed-tjänster ligger kvar i katalogen när de är stoppade.
+- [ ] Döda efemära poster kan städas utan att managed-tjänster försvinner.
+- [ ] Ett lokalt CLI-flöde kan skapa en supervisor-konfiguration utan att startkommandot skickas till portalens HTTP-API.
+- [ ] HTTP-API:t kan endast starta eller stoppa supervisor-resurser som redan är tillåtna genom en DB-post.
+- [ ] Kortvyn visar supervisor-status och erbjuder start eller stopp enbart för managed-tjänster.
+- [ ] Drift mellan supervisor-status och faktisk portstatus visas tydligt.
+- [ ] Befintliga flöden för portreservationer, dokumentationsposter, delningar och liggare fortsätter fungera.
+
+## Säkerhetsgräns
+- Portalen lagrar supervisor-typ och unit- eller containernamn, aldrig ett startkommando.
+- Startkommandon skrivs endast lokalt av `svc install`.
+- Ett namn från URL eller request body får aldrig användas direkt som subprocess-argument utan uppslagning mot DB.
+- Docker-stöd ska följa samma allowlist-princip men behöver inte implementeras innan systemd-spåret fungerar.
+
+## Deluppgifter
+- TASK-355: utöka services-schemat.
+- TASK-356: städa döda efemära poster.
+- TASK-357: rensa kända dubbletter och spökposter.
+- TASK-358: skapa systemd user-units via lokalt CLI.
+- TASK-359: exponera säkra start- och stoppendpoints.
+- TASK-360: spegla supervisor-status och upptäck drift.
+- TASK-361: lägg till start- och stoppkontroller i kortvyn.
+
+## Implementationshänvisningar
+Berör främst `app/database.py`, `app/ports.py`, `app/routes/api.py`, `app/static/app.js` och `cli/svc`. Full design finns i `tmp/tjansteregister-hantering.md`. TASK-306 behandlar separat vilken roll todos-vyn ska ha.
 
 - ID: `01KY7XPSZDWD8567V24Y41MWW7`
 - Type: feature
@@ -75,11 +147,54 @@ Skapa >10 done-tasks + en lågprio öppen; bekräfta att den öppna syns i /api/
 
 ---
 
-## [P3][todo] [portal] UI: play/stop-knapp i kortvyn för managed-tjänster
+## [P3][todo] [portal] Sortera delningssektionen, med skapad-när som kolumn
 
-Del av TASK-354. Kortvyn (/) visar en play-knapp på nere managed-tjänster och en stop-knapp på uppe managed-tjänster (kind != ephemeral). Klick POST:ar till /api/services/{name}/start|stop och uppdaterar kortet. Ephemeral-poster får ingen knapp.
+Todo från Rasmus 2026-08-03 (dokumenterad, inte påbörjad).
 
-Klart när: knappen syns bara för managed, funkar, och kortet uppdateras utan omladdning. Browser-verifiera (se browser-verify-skillen): shot vid 390px OCH 1280px (ingen horisontell overflow, knappen träffbar på mobil), obscura-dump visar play/stop-knapp på managed-kort men inte på ephemeral-kort. Typkontroll räcker inte.
+Delningssektionen på framsidan listar aktiva delningar utan ordning man kan styra. Två saker:
+
+1. Lägg till en kolumn för när delningen skapades. Datan finns redan - shares-tabellen har created_at, och API:t returnerar den.
+2. Gör kolumnerna sorterbara genom att klicka på rubriken. Minst skapad-när, rimligen även namn och storlek. Nyast först som default är sannolikt vad man vill ha.
+
+Sorteringen kan ske klientsidan - listan är kort och hämtas ändå i sin helhet var 30:e sekund.
+
+Att tänka på: sektionen renderas av renderShares i app/static/app.js. Todo-sektionen intill har redan en tabell att härma stilen från. Verifiera vid 390px också - en tabell med fyra kolumner kan bli trång i mobil.
+
+- ID: `01KZ3GGZTMSRVNAXARAYSNGWD3`
+- Type: improvement
+- Actor: ai:claude-opus-5
+
+---
+
+## [P3][done] [portal] Förslag: Kunna visa en strömmande logg från projektet/applikationen via en knapp på kortet
+
+- ID: `01KYG6QM64N8AYRY2613KSED6N`
+- Type: task
+- Actor: human:rasmus
+
+---
+
+## [P3][done] [portal] Lägg till start- och stoppkontroller för managed-tjänster
+
+## Kontext
+När backend kan styra tillåtna systemd-tjänster behöver katalogens kortvy ge ett enkelt sätt att starta stoppade projekt och stoppa aktiva. Kontrollerna ska bara synas när tjänsten faktiskt är managed och ska spegla både pågående anrop och uppdaterad status.
+
+## Acceptanskriterier
+- [ ] En stoppad systemd-tjänst visar en tydlig startknapp.
+- [ ] En aktiv systemd-tjänst visar en tydlig stoppknapp.
+- [ ] Efemära tjänster och rena dokumentationsposter visar ingen start- eller stoppknapp.
+- [ ] Klick anropar rätt endpoint från TASK-359 och uppdaterar det berörda kortet utan helsidomladdning.
+- [ ] Knappen inaktiveras under pågående request så att dubbla anrop undviks.
+- [ ] Lyckat anrop visar ny status och rätt nästa åtgärd.
+- [ ] Misslyckat anrop återställer kontrollen och visar ett tydligt svenskt fel utan att dölja befintlig status.
+- [ ] Ett drifttillstånd från TASK-360 visas tydligt och erbjuder inte en missvisande standardåtgärd.
+- [ ] Kontrollerna är tangentbordsåtkomliga och har begripliga tillgängliga namn.
+- [ ] Vid cirka 390 px finns ingen horisontell overflow och knappen är lätt att träffa.
+- [ ] Vid minst 1280 px passar kontrollen in i befintligt kort utan layoutregression.
+- [ ] Obscura-dump visar kontroll på managed-kort men inte på efemära kort.
+
+## Implementationshänvisningar
+Kortvyn renderas huvudsakligen i `app/static/app.js` med struktur från `app/templates/index.html` och stil i `app/static/tokens.css`. Återanvänd `apiFetch` från `app/static/utils.js`. Browser-verifiera både mobil och desktop enligt projektets browser-verify-skill innan uppgiften markeras klar.
 
 - ID: `01KY7XRSB5ZK1NSVXTPR07JBFA`
 - Type: feature
@@ -87,11 +202,25 @@ Klart när: knappen syns bara för managed, funkar, och kortet uppdateras utan o
 
 ---
 
-## [P3][todo] [portal] Spegla systemd/docker-status för managed-tjänster (stäng drift-gapet)
+## [P3][done] [portal] Spegla systemd-status och upptäck drift för managed-tjänster
 
-Del av TASK-354. För kind='systemd' läs faktisk status från 'systemctl --user is-active <unit>' i stället för att lita på portskanning ensam. Idag kan registret och systemd glida isär: duharfagel visas 'up' på 8001 medan dess unit är inactive - det som lyssnar är en föräldralös manuell uvicorn. En managed tjänst vars supervisor säger inactive men vars port ändå lyssnar (annan process) ska flaggas som DRIFT, inte 'up'.
+## Kontext
+Portstatus ensam räcker inte för managed-tjänster. En systemd-unit kan vara stoppad samtidigt som en föräldralös process lyssnar på dess port, eller vara aktiv utan att den förväntade porten lyssnar. Portalen måste visa supervisor-status och drift i stället för ett missvisande `up`.
 
-Klart när: status för en managed tjänst speglar systemd, och drift (port lyssnar men unit inactive, eller tvärtom) syns som eget tillstånd. Verifiera mot duharfagel-fallet.
+## Acceptanskriterier
+- [ ] Tjänster med `kind='systemd'` får sin supervisor-status från `systemctl --user is-active <unit>`.
+- [ ] Efemära tjänster behåller nuvarande PID- och portbaserade statuslogik.
+- [ ] En aktiv unit med lyssnande port visas som normal `up`.
+- [ ] En inaktiv unit med tyst port visas som normal `down`.
+- [ ] En inaktiv unit med lyssnande port får ett eget drifttillstånd.
+- [ ] En aktiv unit vars förväntade port inte lyssnar får ett eget drifttillstånd.
+- [ ] Saknat unit-namn eller fel från systemctl hanteras deterministiskt och visas inte som falskt `up`.
+- [ ] API-svaret innehåller tillräcklig strukturerad information för att UI:t ska kunna skilja normal status från drift.
+- [ ] Befintliga statusvärden för dokumentationsposter och portkonflikter fortsätter fungera.
+- [ ] Det dokumenterade duharfagel-fallet visas som drift när uniten är inactive men port 8001 lyssnar.
+
+## Implementationshänvisningar
+Utöka statusbedömningen i `app/ports.py` och formningen av svar i `app/routes/api.py`. Kör systemctl utan shell och undvik ett subprocess-anrop per tjänst om status kan hämtas samlat eller cacheas kort. Definiera statuskontraktet på ett ställe så att API, CLI och UI använder samma betydelse. Docker-status kan läggas till senare men ska inte antas fungera genom systemd-koden.
 
 - ID: `01KY7XRSA4KCC4R3YE0288S3Y0`
 - Type: improvement
@@ -99,11 +228,25 @@ Klart när: status för en managed tjänst speglar systemd, och drift (port lyss
 
 ---
 
-## [P3][todo] [portal] Play/stop-endpoints: proxy till systemd, allowlist mot DB
+## [P3][done] [portal] Lägg till säkra endpoints för start och stopp av systemd-tjänster
 
-Del av TASK-354. POST /api/services/{name}/start och /stop. Slår upp posten, kräver kind='systemd' (annars 400), och kör 'systemctl --user start|stop <unit>' via subprocess. Får BARA agera på units som finns i portalens DB (allowlist) - aldrig ett namn från requesten direkt. Ingen auth finns, så attackytan begränsas av att endast förregistrerade units kan styras.
+## Kontext
+Kortvyn i TASK-361 behöver kunna starta och stoppa projekt, men portalen saknar autentisering och binder till hela VM-nätet. Endpointsen måste därför vara strikt begränsade till systemd-units som redan finns i tjänstedatabasen.
 
-Klart när: start/stop mot en registrerad systemd-tjänst funkar och statusen uppdateras; start mot okänd/ephemeral tjänst ger fel. Verifiera: curl POST start -> tjänsten lyssnar, POST stop -> tyst; POST mot ephemeral -> 400.
+## Acceptanskriterier
+- [ ] `POST /api/services/{name}/start` och `POST /api/services/{name}/stop` finns.
+- [ ] Endpointsen slår först upp tjänsten efter namn och använder endast `unit` från den hämtade DB-posten.
+- [ ] Okänd tjänst ger 404.
+- [ ] En efemär tjänst, fel supervisor-typ eller saknat unit-namn avvisas med ett tydligt 400-svar.
+- [ ] Ett unit-namn från URL, query eller request body kan aldrig skickas direkt till subprocess.
+- [ ] `systemctl --user start|stop <unit>` körs utan shell.
+- [ ] Supervisor-fel översätts till ett tydligt API-fel och lämnar tillräcklig serverlogg för felsökning.
+- [ ] Ett lyckat svar innehåller tjänstens aktuella status så klienten kan uppdatera kortet.
+- [ ] Start och stopp fungerar mot en registrerad testunit.
+- [ ] Försök mot okänd eller efemär tjänst startar ingen process.
+
+## Implementationshänvisningar
+Lägg endpointsen i `app/routes/api.py` och håll subprocess-logiken i en avgränsad modul eller funktion som kan testas utan att starta riktiga tjänster. Array-baserade subprocess-argument är obligatoriska; använd inte `shell=True`. Docker-stöd ligger utanför denna deluppgift.
 
 - ID: `01KY7XRS96RVBS8MMBNT3FC7C8`
 - Type: feature
@@ -111,13 +254,25 @@ Klart när: start/stop mot en registrerad systemd-tjänst funkar och statusen up
 
 ---
 
-## [P3][todo] [portal] svc install: generera systemd user-unit för ett projekt
+## [P3][done] [portal] Lägg till svc install för systemd-hanterade projekt
 
-Del av TASK-354. Nytt lokalt CLI-subkommando: svc install <projekt> --cmd '<startkommando>' --cwd <katalog> [--port N]. Genererar ~/.config/systemd/user/<projekt>.service från en mall (WorkingDirectory, ExecStart, ev. Restart=on-failure), kör 'systemctl --user daemon-reload', och registrerar/uppdaterar posten i portalen med kind='systemd' och unit='<projekt>.service'.
+## Kontext
+TASK-354 behöver ett lokalt och säkert sätt att göra ett projekt startbart. Startkommandot ska skrivas till en systemd user-unit på VM:en och får aldrig skickas till eller lagras av portalens HTTP-API.
 
-KRITISKT för säkerheten: kommandot bakas in i unit-filen HÄR, via lokalt CLI - det får ALDRIG POST:as till ett HTTP-endpoint för exekvering. Portalen lär sig bara unit-NAMNET.
+## Acceptanskriterier
+- [ ] `svc install <projekt> --cmd <kommando> --cwd <katalog> [--port N]` finns och validerar projekt, katalog och övrig input.
+- [ ] Kommandot skapar en giltig user-unit under `~/.config/systemd/user/<projekt>.service`.
+- [ ] Unit-filen innehåller minst `WorkingDirectory` och `ExecStart`, samt ett dokumenterat restart-beteende.
+- [ ] Unit-namnet kan inte användas för path traversal eller för att skriva utanför systemd user-katalogen.
+- [ ] Befintlig unit skrivs inte över oavsiktligt; beteendet vid konflikt är tydligt och säkert.
+- [ ] `systemctl --user daemon-reload` körs efter lyckad skrivning.
+- [ ] Portalen registreras eller uppdateras med `kind='systemd'` och det genererade unit-namnet.
+- [ ] Portalens request innehåller aldrig startkommandot.
+- [ ] En testunit kan startas med systemctl, lyssnar på vald port och kan stoppas igen.
+- [ ] CLI:t ger tydliga svenska felmeddelanden vid ogiltig input eller systemd-fel.
 
-Klart när: svc install skapar en giltig unit + DB-post; systemctl --user start <unit> funkar. Verifiera: kör svc install mot ett testprojekt, kontrollera unit-filen, starta via systemctl, curl:a porten.
+## Implementationshänvisningar
+Implementera subkommandot i `cli/svc`. Unit-filen är en lokal sidoeffekt och bör skrivas atomärt. Använd systemd-kompatibel hantering av argument i stället för att bygga ett shell-kommando som senare evalueras. Verifiera mot ett avgränsat testprojekt och städa endast de testresurser som skapats av denna uppgift.
 
 - ID: `01KY7XRS7Y8B7HY1GEA3WEBN1V`
 - Type: feature
@@ -125,11 +280,21 @@ Klart när: svc install skapar en giltig unit + DB-post; systemctl --user start 
 
 ---
 
-## [P3][todo] [portal] Engångsstädning: spök-portalposter + gamlatidtabeller-dubblett
+## [P3][done] [portal] Ta bort kända spökposter och dubbletter ur tjänsteregistret
 
-Del av TASK-354 (kan göras direkt, oberoende av resten). Ta bort tre spök-portalposter (portal-8002/8007/8009, gamla självregistreringar från liggarimport) och dubbletten gamlatidtabeller-8871 (samma döda pid som 8870). Alla PID verifierat döda 2026-07-23.
+## Kontext
+Fyra verifierat döda poster skräpar ned katalogen och försvårar kontrollen av det nya katalogspåret. Städningen är fristående från övriga delar av TASK-354 och ska bara omfatta de uttryckligen angivna posterna.
 
-Klart när: svc list visar inte längre dessa fyra. Verifiera: curl /api/services | grep saknar dem.
+## Acceptanskriterier
+- [ ] Verifiera på nytt att PID och port är inaktiva för `portal-8002`, `portal-8007`, `portal-8009` och `gamlatidtabeller-8871`.
+- [ ] Kontrollera `svc list` och tjänsteregistret innan borttagning så att namnen fortfarande avser de kända döda posterna.
+- [ ] Ta bort exakt dessa fyra poster och inga andra.
+- [ ] Liggaren skrivs om utan de borttagna posterna.
+- [ ] `svc list` och `GET /api/services` saknar samtliga fyra efteråt.
+- [ ] Den avsedda posten `gamlatidtabeller-8870` finns kvar oförändrad.
+
+## Implementationshänvisningar
+Detta är en dataåtgärd via befintligt `svc unregister` eller motsvarande DELETE-endpoint, inte en kodändring. Om någon PID eller port inte längre matchar den dokumenterade situationen ska uppgiften stoppas och omvärderas i stället för att posten tas bort.
 
 - ID: `01KY7XQVEG851YKBBTR9B7KCZG`
 - Type: chore
@@ -147,7 +312,7 @@ GET /share/{uid}/... för en delning som gått ut eller inte finns svarar med r�
 
 ---
 
-## [P3][todo] [portal] Todos-vyn blev spretig - fundera på bättre överblick
+## [P3][done] [portal] Todos-vyn blev spretig - fundera på bättre överblick
 
 Rasmus använder mest backlog-CLI direkt. Portalens todos-sektion på förstasidan känns spretig med många öppna tasks. Idéer att utvärdera: visa bara blockerade tasks, ev. i en gemensam lista över projekt istället för per-projekt. Bör resoneras kring VAD portalens todos-vy ska göra som CLI:t inte gör (annars ta bort/banta den).
 

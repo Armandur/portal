@@ -129,14 +129,18 @@ let testsByProject = new Map();
 function renderProjectTests(project) {
   const sessions = testsByProject.get(project);
   if (!sessions || !sessions.length) return "";
+  // Egen rad per lista: med inline-element och <br> wrappade räknaren över
+  // radgränsen och såg ut att höra till nästa lista.
   const rader = sessions
     .map((s) => {
       const m = s.summary;
-      return `<a href="/test/${encodeURIComponent(s.slug)}">${escapeHtml(s.title)}</a>
-              <span class="muted">${m.avklarat}/${m.total}${m.fel ? `, ${m.fel} fel` : ""}</span>`;
+      return `<div class="card-test">
+        <a href="/test/${encodeURIComponent(s.slug)}" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</a>
+        <span class="muted">${m.avklarat}/${m.total}${m.fel ? `, ${m.fel} fel` : ""}</span>
+      </div>`;
     })
-    .join("<br>");
-  return `<div class="card-todos">${rader}</div>`;
+    .join("");
+  return `<div class="card-tests">${rader}</div>`;
 }
 
 function renderProjectCard(services) {

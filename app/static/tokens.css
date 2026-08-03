@@ -108,6 +108,31 @@ h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
 }
 .card-todos .badge { font-size: 0.68rem; padding: 0.1rem 0.45rem; }
 
+/* Öppna testlistor på projektkortet - en rad per lista, annars wrappar
+   räknaren över radgränsen och ser ut att höra till nästa lista. */
+.card-tests {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--pico-muted-border-color);
+  font-size: 0.85rem;
+}
+.card-test {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+.card-test + .card-test { margin-top: 0.25rem; }
+/* Titeln kapas med ellips i stället för att radbryta - en lista per rad, alltid.
+   min-width:0 krävs för att ett flex-barn ska få krympa under sitt innehåll. */
+.card-test a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-test .muted { white-space: nowrap; font-size: 0.8rem; flex: 0 0 auto; }
+
 /* Todo-överblicken: siffrorna högerställs mot varandra */
 #todos .num { text-align: right; }
 
