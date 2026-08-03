@@ -1,6 +1,6 @@
 # Backlog Export
 
-## [P2][todo] [portal] Projektkortens todo- och testlänkar matchar inte backlog-projektnamn
+## [P2][done] [portal] Projektkortens todo- och testlänkar matchar inte backlog-projektnamn
 
 Todo från Rasmus 2026-08-03: pågår-notisen som finns i todo-listan borde också synas på korten. Vid undersökning visade det sig vara ett matchningsproblem, inte en saknad funktion.
 
@@ -147,7 +147,7 @@ Skapa >10 done-tasks + en lågprio öppen; bekräfta att den öppna syns i /api/
 
 ---
 
-## [P3][todo] [portal] Sortera delningssektionen, med skapad-när som kolumn
+## [P3][done] [portal] Sortera delningssektionen, med skapad-när som kolumn
 
 Todo från Rasmus 2026-08-03 (dokumenterad, inte påbörjad).
 
