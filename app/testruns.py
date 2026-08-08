@@ -65,13 +65,36 @@ def parse_items(text: str) -> list[dict]:
     """Plockar ut numrerade punkter ur markdown, grupperade under ##-rubriker.
 
     Punkter som löper över flera rader hålls ihop: allt fram till nästa
-    numrerade punkt eller nästa rubrik hör till samma punkt.
+    numrerade punkt eller nästa rubrik hör till samma punkt. Raderna slås ihop
+    till en, för en testpunkt är en mening - UTOM inuti ett kodblock med tre
+    backticks, där radbrytningarna är själva poängen och behålls som de är.
+    Inuti blocket tolkas ingen struktur: en rad som börjar med "1. " eller
+    "## " är kod där, inte en ny punkt.
     """
     items: list[dict] = []
     heading = None
     current: dict | None = None
+    # indraget på öppnande ```-rad, så blockets rader kan dras ut lika mycket
+    # (i markdown är blocket indraget under punktnumret)
+    fence_indent: int | None = None
+    # texten efter ett block måste börja på ny rad - annars hamnar den efter
+    # den avslutande ```-raden och blocket går inte längre att känna igen
+    efter_block = False
 
     for line in text.splitlines():
+        if fence_indent is not None:
+            current["body"] += "\n" + _dedent(line, fence_indent)
+            if line.strip().startswith("```"):
+                fence_indent = None
+                efter_block = True
+            continue
+
+        if current is not None and line.strip().startswith("```"):
+            fence_indent = len(line) - len(line.lstrip())
+            current["body"] += "\n" + line.strip()
+            efter_block = False
+            continue
+
         h = re.match(r"^##\s+(.*)$", line)
         if h:
             current = None
@@ -81,11 +104,22 @@ def parse_items(text: str) -> list[dict]:
         if m:
             current = {"heading": heading, "body": m.group(2).strip()}
             items.append(current)
+            efter_block = False
             continue
         if current is not None and line.strip():
-            current["body"] += " " + line.strip()
+            current["body"] += ("\n" if efter_block else " ") + line.strip()
+            efter_block = False
 
     return items
+
+
+def _dedent(line: str, indent: int) -> str:
+    """Tar bort upp till `indent` inledande blanksteg - aldrig mer, så djupare
+    indrag inuti blocket (en fortsättningsrad, en nästlad struktur) står kvar."""
+    i = 0
+    while i < indent and i < len(line) and line[i] == " ":
+        i += 1
+    return line[i:]
 
 
 def create_session(
@@ -293,11 +327,17 @@ def delete_session(slug: str) -> bool:
         conn.close()
 
 
-# Testpunkter innehåller ofta en adress man ska öppna. Texten escapas alltid,
-# och bara de två mönster som matchas här blir taggar - ingen HTML från den som
-# skapar sessionen släpps igenom.
+# Testpunkter innehåller ofta en adress man ska öppna eller ett kommando man
+# ska köra. Texten escapas alltid, och bara de mönster som matchas här blir
+# taggar - ingen HTML från den som skapar sessionen släpps igenom.
 _MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+_CODE_RE = re.compile(r"`([^`\n]+)`")
+# Block med tre backticks. Kräver avslutande rad - ett oavslutat block matchar
+# inte och visas som tecken, i stället för att äta resten av punkten.
+# Språktaggen (```sh) fångas och kastas: ingen syntaxfärgning här, punkterna
+# ska kopieras och köras, inte läsas som kod.
+_FENCE_RE = re.compile(r"^```[^\n]*\n(.*?)\n?^[ \t]*```[ \t]*$", re.M | re.S)
 
 
 def _anchor(url: str, text: str) -> str:
@@ -308,14 +348,17 @@ def _anchor(url: str, text: str) -> str:
 
 
 def linkify(text: str) -> str:
-    """Escapar texten och gör http(s)-adresser klickbara.
+    """Escapar texten, gör http(s)-adresser klickbara och backticks till kod.
 
     Stöder både markdown-form, [öppna anmälan](http://...), och rena adresser.
     Segmenten mellan träffarna escapas, så < och & i brödtexten blir text och
     inte markup.
+
+    Kodspann plockas ut FÖRST, så en adress inuti backticks blir kod och inte
+    en länk - det är kommandot man ska kopiera, inte något att klicka på.
+    Ordningen är block -> kodspann -> länkar, hela vägen ner.
     """
     ut: list[str] = []
-    pos = 0
 
     def skriv_med_bara_urler(segment: str) -> None:
         p = 0
@@ -328,9 +371,26 @@ def linkify(text: str) -> str:
             p = m.end()
         ut.append(html.escape(segment[p:]))
 
-    for m in _MD_LINK_RE.finditer(text):
-        skriv_med_bara_urler(text[pos:m.start()])
-        ut.append(_anchor(m.group(2), m.group(1)))
+    def skriv_med_lankar(segment: str) -> None:
+        pos = 0
+        for m in _MD_LINK_RE.finditer(segment):
+            skriv_med_bara_urler(segment[pos:m.start()])
+            ut.append(_anchor(m.group(2), m.group(1)))
+            pos = m.end()
+        skriv_med_bara_urler(segment[pos:])
+
+    def skriv_med_kodspann(segment: str) -> None:
+        pos = 0
+        for m in _CODE_RE.finditer(segment):
+            skriv_med_lankar(segment[pos:m.start()])
+            ut.append(f"<code>{html.escape(m.group(1))}</code>")
+            pos = m.end()
+        skriv_med_lankar(segment[pos:])
+
+    pos = 0
+    for m in _FENCE_RE.finditer(text):
+        skriv_med_kodspann(text[pos:m.start()])
+        ut.append(f"<pre><code>{html.escape(m.group(1))}</code></pre>")
         pos = m.end()
-    skriv_med_bara_urler(text[pos:])
+    skriv_med_kodspann(text[pos:])
     return "".join(ut)

@@ -41,6 +41,56 @@
     /* Länk i punkttexten: understruken så den syns även när punkten är
        avklarad och texten dämpats. */
     .body a { text-decoration: underline; }
+    /* Kommandon i punkttexten. overflow-wrap: anywhere - en lång sudo-rad eller
+       sökväg utan mellanslag ska brytas, aldrig knuffa ut sidbredden på mobil. */
+    .body code {
+      font-family: var(--pico-font-family-monospace, monospace);
+      font-size: .85em;
+      background: var(--pico-code-background-color, rgba(127, 127, 127, .16));
+      padding: .1em .35em;
+      border-radius: .25rem;
+      overflow-wrap: anywhere;
+    }
+    /* Kodblock. Scrollar internt i stället för att bryta raderna - en kopierad
+       kommandosekvens ska se ut som i terminalen. min-width: 0 på .body krävs
+       för att det ska hålla: utan den växer flex-elementet med innehållet och
+       det är sidan som scrollar i stället för blocket. */
+    .body pre {
+      margin: .4rem 0 0;
+      padding: .5rem .6rem;
+      background: var(--pico-code-background-color, rgba(127, 127, 127, .16));
+      border-radius: .3rem;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .body pre code {
+      background: none;
+      padding: 0;
+      overflow-wrap: normal;
+      white-space: pre;
+    }
+    /* Kodblock med kopieringsknapp: knappen får en egen rad överst i rutan i
+       stället för att ligga ovanpå koden. Blocket scrollar i sidled, så en
+       överlagrad knapp skulle dölja kod man just scrollat fram - värst på
+       mobil, där knappen tar en tredjedel av bredden. */
+    .kodblock {
+      margin: .4rem 0 0;
+      background: var(--pico-code-background-color, rgba(127, 127, 127, .16));
+      border-radius: .3rem;
+      max-width: 100%;
+      /* håller den scrollande koden innanför de rundade hörnen */
+      overflow: hidden;
+    }
+    .kodblock pre { margin: 0; background: none; border-radius: 0; padding: 0 .6rem .5rem; }
+    .kodbar { display: flex; justify-content: flex-end; padding: .25rem .3rem .1rem; }
+    .kopiera {
+      margin: 0;
+      padding: .1rem .5rem;
+      font-size: .75rem;
+      width: auto;
+      border-radius: .25rem;
+    }
+    .kopiera.kopierat { color: var(--status-ok); border-color: var(--status-ok); }
 
     /* Aktiv punkt: den piltangenterna står på. Ring + bakgrund, inte bara
        kantfärg, så den syns även när punkten redan har en statusfärg. */
@@ -53,7 +103,7 @@
     .item-head { display: flex; gap: .5rem; align-items: baseline; }
     .num { font-variant-numeric: tabular-nums; color: var(--pico-muted-color);
       font-size: .85rem; min-width: 2.2rem; }
-    .body { margin: 0; }
+    .body { margin: 0; min-width: 0; }
 
     /* Knapparna ska gå att träffa med tummen: 44px är Apples/Googles miniminorm */
     .actions { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
@@ -260,7 +310,9 @@
                data-grupp="{{ ns.grupp }}">
         <div class="item-head">
           <span class="num">{{ item.position }}.</span>
-          <p class="body">{{ item.body | linkify | safe }}</p>
+          {# div, inte p: ett kodblock renderas som <pre> och browsern stänger
+             en <p> vid första blocktagg - punkttexten skulle brytas isär. #}
+          <div class="body">{{ item.body | linkify | safe }}</div>
         </div>
         <div class="actions">
           <button class="secondary" data-set="ok"      aria-pressed="{{ 'true' if item.status == 'ok' else 'false' }}">Ok</button>
@@ -437,6 +489,71 @@
     // Klick i en punkt gör den aktiv, så mus och tangentbord inte glider isär
     document.querySelectorAll(".item").forEach(item =>
       item.addEventListener("click", () => setAktiv(item, false)));
+
+    /* Kopiera kodblock.
+       navigator.clipboard finns BARA i säker kontext, och portalen serveras
+       över http - därför är execCommand-vägen inte en artighetsfallback utan
+       den som faktiskt används idag. Clipboard-API:t provas först ändå, så
+       knappen blir rätt av sig själv om portalen någon gång går via https. */
+    async function kopieraText(text) {
+      if (navigator.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(text); return true; } catch {}
+      }
+      /* Ett dolt element med texten som RIKTIGT innehåll, markerat med ett
+         Range. Inte en <textarea>: dess value sätter inga barnnoder, så
+         selectNodeContents markerar tomt och kopieringen tar med sig
+         ingenting - execCommand svarar ändå true. Verifierat genom att
+         klistra in efteråt, inte genom returvärdet. */
+      const el = document.createElement("div");
+      el.textContent = text;
+      el.style.cssText =
+        "position:fixed;top:0;left:0;opacity:0;white-space:pre;user-select:text;";
+      document.body.appendChild(el);
+      const sel = getSelection();
+      const forra = sel.rangeCount ? sel.getRangeAt(0) : null;
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch {}
+      el.remove();
+      // lägg tillbaka användarens egen markering - kopieringen ska inte
+      // rycka undan det hen höll på att markera
+      sel.removeAllRanges();
+      if (forra) sel.addRange(forra);
+      return ok;
+    }
+
+    // Knappen byggs i JS: utan JS kan den ändå inte kopiera, och en död knapp
+    // är sämre än ingen.
+    document.querySelectorAll(".body pre").forEach(pre => {
+      const wrap = document.createElement("div");
+      wrap.className = "kodblock";
+      pre.replaceWith(wrap);
+      wrap.appendChild(pre);
+
+      const bar = document.createElement("div");
+      bar.className = "kodbar";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "kopiera secondary outline";
+      btn.textContent = "Kopiera";
+      bar.appendChild(btn);
+      wrap.insertBefore(bar, pre);
+
+      let timer = null;
+      btn.addEventListener("click", async () => {
+        const ok = await kopieraText(pre.textContent);
+        btn.textContent = ok ? "Kopierat" : "Kunde inte kopiera";
+        btn.classList.toggle("kopierat", ok);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          btn.textContent = "Kopiera";
+          btn.classList.remove("kopierat");
+        }, 1500);
+      });
+    });
 
     document.addEventListener("keydown", e => {
       const iFalt = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
