@@ -331,6 +331,7 @@
     {% endfor %}
   </main>
 
+  <script src="/static/utils.js"></script>
   <script>
     const SLUG = {{ session.slug | tojson }};
 
@@ -489,41 +490,6 @@
     // Klick i en punkt gör den aktiv, så mus och tangentbord inte glider isär
     document.querySelectorAll(".item").forEach(item =>
       item.addEventListener("click", () => setAktiv(item, false)));
-
-    /* Kopiera kodblock.
-       navigator.clipboard finns BARA i säker kontext, och portalen serveras
-       över http - därför är execCommand-vägen inte en artighetsfallback utan
-       den som faktiskt används idag. Clipboard-API:t provas först ändå, så
-       knappen blir rätt av sig själv om portalen någon gång går via https. */
-    async function kopieraText(text) {
-      if (navigator.clipboard?.writeText) {
-        try { await navigator.clipboard.writeText(text); return true; } catch {}
-      }
-      /* Ett dolt element med texten som RIKTIGT innehåll, markerat med ett
-         Range. Inte en <textarea>: dess value sätter inga barnnoder, så
-         selectNodeContents markerar tomt och kopieringen tar med sig
-         ingenting - execCommand svarar ändå true. Verifierat genom att
-         klistra in efteråt, inte genom returvärdet. */
-      const el = document.createElement("div");
-      el.textContent = text;
-      el.style.cssText =
-        "position:fixed;top:0;left:0;opacity:0;white-space:pre;user-select:text;";
-      document.body.appendChild(el);
-      const sel = getSelection();
-      const forra = sel.rangeCount ? sel.getRangeAt(0) : null;
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      sel.removeAllRanges();
-      sel.addRange(r);
-      let ok = false;
-      try { ok = document.execCommand("copy"); } catch {}
-      el.remove();
-      // lägg tillbaka användarens egen markering - kopieringen ska inte
-      // rycka undan det hen höll på att markera
-      sel.removeAllRanges();
-      if (forra) sel.addRange(forra);
-      return ok;
-    }
 
     // Knappen byggs i JS: utan JS kan den ändå inte kopiera, och en död knapp
     // är sämre än ingen.

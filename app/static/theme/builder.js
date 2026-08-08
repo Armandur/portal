@@ -423,20 +423,19 @@ function init() {
   loadThemeList();
 
   $("copy-css").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("css-out").textContent);
-      const b = $("copy-css");
-      const orig = b.textContent;
-      b.textContent = "Kopierat!";
-      setTimeout(() => (b.textContent = orig), 1500);
-    } catch {
-      // Utan clipboard-behörighet: markera texten så användaren kan Ctrl+C
+    const b = $("copy-css");
+    const ok = await kopieraText($("css-out").textContent);
+    if (!ok) {
+      // Kopieringen nekades: markera texten så den går att ta med Ctrl+C
       const r = document.createRange();
       r.selectNodeContents($("css-out"));
       const sel = getSelection();
       sel.removeAllRanges();
       sel.addRange(r);
     }
+    const orig = b.textContent;
+    b.textContent = ok ? "Kopierat!" : "Markerad - tryck Ctrl+C";
+    setTimeout(() => (b.textContent = orig), 1500);
   });
 
   refresh();

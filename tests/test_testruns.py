@@ -179,6 +179,9 @@ class TestSessionSidaTest(unittest.TestCase):
         mall = (Path(__file__).resolve().parent.parent
                 / "app" / "templates" / "test.html").read_text()
         self.assertIn('querySelectorAll(".body pre")', mall)
+        # kopieringen ligger i utils.js - utan den taggen är kopieraText
+        # odefinierad och knappen kastar vid klick
+        self.assertIn('<script src="/static/utils.js">', mall)
 
     def test_okand_session_ger_404(self):
         with self.assertRaises(HTTPException) as ctx:
