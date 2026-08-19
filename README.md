@@ -244,7 +244,7 @@ Statusvärden per tjänst:
 | `up` | Porten lyssnar (PID okänd eller matchar), eller systemd-uniten är aktiv |
 | `conflict` | Porten lyssnar men med annan PID än den registrerade |
 | `down` | Inget lyssnar, och uniten är inte aktiv |
-| `drift` | Systemd-unit och verklighet går isär (aktiv utan port, eller inaktiv med port som lyssnar) |
+| `drift` | Systemd-unit och verklighet går isär: uniten är aktiv men porten lyssnar inte, eller uniten är inaktiv medan porten lyssnar |
 | `starting` / `stopping` | Uniten håller på att starta respektive stoppa |
 | `docs` | Dokumentationspost utan port |
 | `unknown` | Systemd-statusen kunde inte läsas |
