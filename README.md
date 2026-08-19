@@ -18,10 +18,26 @@ Portalen:
 - delar ut garanterat lediga portar (kollar registret, live-lyssnande portar
   via `ss -tlnp` och aktiva reservationer)
 - listar alla lyssnande portar, inklusive oregistrerade
-- visar öppna todos per projekt (read-only från backlog-verktyget), med
-  renderad markdown-beskrivning och länk till tasken i backlog web
+- strömmar en tjänsts logg live i webbläsaren (loggfil eller journalen för
+  en systemd-unit)
+- installerar långlivade projekt som systemd user-tjänster och kan starta
+  och stoppa dem från kortvyn
+- visar antal öppna todos per projekt (read-only från backlog-verktyget) med
+  länk vidare till backlog web
+- delar filer på egen URL utan att låsa en port per fil, med automatisk
+  städning efter TTL - markdown renderas som läsvy
+- hostar testlistor som betas av i ett UI i stället för punkt för punkt i
+  chatten, och skriver sammanfattningen tillbaka till backlog-tasken
+- genererar teman (accent- och statusfärger som `tokens.css`) i en
+  färghjulsbyggare och sparar dem namngivet för hämtning via API
 
 Portalen kör själv på port 8890: http://ubuntu-ai:8890
+
+![Kortvyn med registrerade tjänster](docs/images/kortvyn.png)
+
+Kortvyn: ett kort per tjänst med live-status (uppe, konflikt, nere, docs),
+länk, dokumentation, loggknapp och testlistans framsteg. Skärmdumparna i
+den här readmen är tagna mot en demoinstans med påhittade tjänster.
 
 ## Installation
 
@@ -78,6 +94,14 @@ svc unregister mitt-projekt
 svc ports
 ```
 
+Gemensamma fält på `register` och `update`: `--pid`, `--desc`, `--docs-file`,
+`--docs-md`, `--log-file`, `--kind` (`ephemeral`, `systemd`, `docker`),
+`--unit`, `--backlog-project` (när projektet heter något annat i backlog) och
+`--autostart/--no-autostart`.
+
+Efemära poster (default-typen) städas automatiskt bort när varken porten
+lyssnar eller PID:en lever - en dev-server som dött lämnar ingen skräprad.
+
 ### Dokumentationsposter (registrering utan port)
 
 Ett projekts dokumentation kan registreras på portalen innan någon tjänst
@@ -100,6 +124,21 @@ svc update mitt-projekt-docs --port 8123 --pid 12345
 Portlösa poster får status `docs`, länkar till sin dokumentationssida i
 stället för en port-URL och skrivs med `-` i liggarens portkolumn.
 
+### Permanenta tjänster (systemd)
+
+`svc install` gör ett projekt långlivat: kommandot skriver en systemd
+user-unit lokalt på VM:en och registrerar bara unit-namnet i portalen
+(startkommandot lämnar aldrig maskinen). Sådana poster får typen `systemd`
+och kan startas och stoppas från kortvyn - portalen styr bara units den
+själv installerat.
+
+```bash
+svc install mitt-projekt \
+    --cmd "/home/rasmus/workspace/mitt-projekt/.venv/bin/uvicorn app.main:app --port 8123" \
+    --cwd /home/rasmus/workspace/mitt-projekt \
+    --port 8123 --autostart
+```
+
 ### Loggströmning
 
 Har en post en känd loggkälla får dess kort en **Logg**-knapp som strömmar
@@ -116,6 +155,55 @@ svc register min-tjanst --port 8123 --project x --kind systemd \
     --unit min-tjanst.service
 ```
 
+### Fildelning
+
+`svc share` laddar upp en fil till portalen och skriver ut en länk under
+`/share/{uid}/{filnamn}` - ingen extra port behöver låsas för att visa en
+rapport eller en bild. Delningen städas automatiskt när TTL löper ut
+(default 120 minuter, `--ttl 0` = tills `unshare`). Markdown-filer renderas
+som en stylad läsvy med syntaxfärgade kodblock; `?raw=1` ger källan.
+
+![Delad markdown renderad som läsvy](docs/images/delning.png)
+
+```bash
+svc share rapport.md --desc "Granskning av X" --ttl 1440
+svc shares
+svc unshare a1b2c3d4e5f6
+```
+
+### Testlistor
+
+`svc test-session` lägger testpunkterna i portalen i stället för i chatten:
+en numrerad markdown-lista blir en sida där varje punkt markeras ok, fel,
+hoppad eller lämnas otestad, med plats för en anteckning. `close` skriver
+sammanfattningen som kommentar på backlog-tasken. Alla listor med framsteg
+finns på http://ubuntu-ai:8890/test.
+
+![Testlista där punkterna markeras ok eller fel](docs/images/testlista.png)
+
+```bash
+svc test-session create mitt-projekt-780 --title "Testa exportvyn" \
+    --items-file testpunkter.md --task TASK-780 --project mitt-projekt
+svc test-session list
+svc test-session show mitt-projekt-780 --only fel
+svc test-session close mitt-projekt-780
+```
+
+Punkterna parsas ur markdown: varje testfall börjar med `N. ` i början av en
+rad, och grupperas med `## rubrik`.
+
+### Tema-buildern
+
+http://ubuntu-ai:8890/tema genererar en `tokens.css`-snutt till Pico-baserade
+projekt: välj accent- och statusfärger på ett färghjul, utforska
+harmonischeman, se live-preview i ljust och mörkt läge med WCAG-avläsning,
+och exportera CSS:en. Mörkvarianter härleds automatiskt ur ljusfärgerna.
+![Tema-buildern med färghjul, preview och genererad CSS](docs/images/tema-builder.png)
+
+Teman kan sparas namngivet och hämtas rått via
+`GET /api/themes/{namn}/tokens.css`, så ett tema kan designas i webbläsaren
+och hämtas in i ett projekt utan att kopieras för hand.
+
 ## API-översikt
 
 Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
@@ -128,12 +216,38 @@ Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
 | POST | /api/services | Registrera tjänst |
 | PATCH | /api/services/{name} | Uppdatera fält |
 | DELETE | /api/services/{name} | Avregistrera |
+| GET | /api/services/{name}/logs | Loggström (SSE) |
+| POST | /api/services/{name}/start | Starta portalinstallerad systemd-tjänst |
+| POST | /api/services/{name}/stop | Stoppa portalinstallerad systemd-tjänst |
 | GET | /api/ports | Lyssnande portar + registrerade tjänster |
 | POST | /api/ports/reserve | Reservera ledig port, svarar {"port": N} |
+| GET | /api/todos | Öppna todos per backlog-projekt |
+| GET | /api/shares | Aktiva delningar |
+| POST | /api/shares | Skapa delning (fil base64-kodad i JSON) |
+| DELETE | /api/shares/{uid} | Ta bort delning (rad + fil) |
+| GET | /api/themes | Sparade teman |
+| POST | /api/themes | Spara/uppdatera tema (upsert på namn) |
+| GET | /api/themes/{name} | Ett tema med spec |
+| GET | /api/themes/{name}/tokens.css | Temats CSS som rå text/css |
+| DELETE | /api/themes/{name} | Ta bort tema |
+| GET | /api/test-sessions | Alla testlistor med framsteg |
+| POST | /api/test-sessions | Skapa testlista ur markdown |
+| GET | /api/test/{slug} | En testlista |
+| POST | /api/test/{slug}/items/{position} | Sätt status/anteckning på en punkt |
+| POST | /api/test/{slug}/close | Stäng och kommentera backlog-tasken |
+| DELETE | /api/test/{slug} | Ta bort testlista |
 
-Statusvärden per tjänst: `up` (porten lyssnar, PID okänd eller matchar),
-`conflict` (porten lyssnar men med annan PID än den registrerade),
-`down` (inget lyssnar), `docs` (dokumentationspost utan port).
+Statusvärden per tjänst:
+
+| Status | Betydelse |
+|--------|-----------|
+| `up` | Porten lyssnar (PID okänd eller matchar), eller systemd-uniten är aktiv |
+| `conflict` | Porten lyssnar men med annan PID än den registrerade |
+| `down` | Inget lyssnar, och uniten är inte aktiv |
+| `drift` | Systemd-unit och verklighet går isär (aktiv utan port, eller inaktiv med port som lyssnar) |
+| `starting` / `stopping` | Uniten håller på att starta respektive stoppa |
+| `docs` | Dokumentationspost utan port |
+| `unknown` | Systemd-statusen kunde inte läsas |
 
 Portreservationer gäller 15 minuter och städas därefter bort automatiskt.
 När en tjänst registreras på en reserverad port förbrukas reservationen.
@@ -145,6 +259,14 @@ create/update/delete. Redigera den inte för hand - använd `svc` eller API:t.
 Vid appstart importeras tabellrader vars port inte redan finns i databasen
 (så manuellt tillagda tjänster från gamla flödet inte tappas); databasen
 vinner vid konflikt.
+
+## Konfiguration
+
+Allt är överridbart via miljövariabler, se `.env.example` för hela listan -
+bland annat databas- och liggarsökväg (`PORTAL_DB_PATH`,
+`PORTAL_LEDGER_PATH`), portalens egen host och port, hostnamnet som används
+i länkar (`PORTAL_SERVICE_HOST`, default `ubuntu-ai` - aldrig localhost),
+TTL och maxstorlek för delningar samt sökvägen till backlog-CLI:t.
 
 ## Docker (reservspår - systemd är primär driftväg)
 
