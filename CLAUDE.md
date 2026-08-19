@@ -33,11 +33,14 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `app/ledger.py` - genererar och importerar
   `~/.claude/running-services.md`.
 - `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
-  (/api/shares) och tema-endpoints (/api/themes; `.../tokens.css` serverar
-  rå text/css).
+  (/api/shares), tema-endpoints (/api/themes; `.../tokens.css` serverar
+  rå text/css), start/stopp av portalinstallerade systemd-tjänster
+  (/api/services/{name}/start|stop) och testsessioner (/api/test-sessions,
+  /api/test/{slug}...).
 - `app/routes/pages.py` - kortvyn (/), tema-buildern (/tema),
-  dokumentationsvyn (/docs/{name}) och delningsservering
-  (/share/{uid}/{filnamn}; .md renderas som läsvy).
+  dokumentationsvyn (/docs/{name}), delningsservering
+  (/share/{uid}/{filnamn}; .md renderas som läsvy) och testlistorna
+  (/test, /test/{slug}).
 - `app/share_render.py` - renderar delade .md-filer till självbärande,
   sanerade HTML-läsvyer (inline CSS med portalens palett). render_text_page
   finns för framtida .txt.
@@ -49,8 +52,18 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   om todo-överblicken).
 - `app/logs.py` - loggkälleresolution och live-strömning för
   GET /api/services/{name}/logs (SSE).
+- `app/supervisor.py` - systemd user-styrning: unitnamnsvalidering
+  (`valid_systemd_unit`), ägarskapsgrind (`portal_managed_systemd_unit`,
+  letar `X-Portal-Managed=true` i unit-filen), `systemctl --user is-active`
+  batchat för statuskolumnen och start/stopp.
+- `app/testruns.py` - testsessioner: schema (test_sessions/test_items),
+  markdown-parsning av numrerade punkter, statussättning och
+  `close_session()` som skriver sammanfattningen som backlog-kommentar via
+  CLI:t (aktör `ai:portal`).
 - `app/templates/` - index.html (klientrenderad via fetch), docs.html,
-  tema.html (tema-buildern; fristående sida, ej förstasidans layout).
+  tema.html (tema-buildern; fristående sida, ej förstasidans layout),
+  tests.html (alla testlistor) och test.html (en testlista att beta av;
+  serverrenderad, statusar sätts via fetch).
 - `app/static/` - pico.min.css (self-hostad Pico 2), tokens.css (portalens
   egen stil ovanpå Pico), utils.js (apiFetch, escapeHtml), app.js.
   `theme/` - tema-buildern: color.js (ren färgmatematik: konvertering,
@@ -59,7 +72,9 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   self-hostad Coloris-väljare, `vendor/iro/` - self-hostad iro.js (MPL-2.0)
   för färghjulet.
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
-  register/port/list även share/unshare/shares för fildelning.
+  register/port/list även share/unshare/shares för fildelning,
+  `install` (skriver systemd user-unit lokalt) och `test-session`
+  (create/close/delete/list/show för testlistor).
 - `deploy/portal.service` - systemd user unit (primär driftväg).
 - `install.sh` - uv sync + unit-installation + svc-symlink. Idempotent.
 - `Dockerfile` - reservspår, kräver --network host --pid host.
@@ -99,10 +114,30 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   Klientsidan lägger loggpanelen i en `<dialog>` UTANFÖR `#services`,
   eftersom kortvyn byter ut hela sin innerHTML var 30:e sekund och annars
   skulle slå sönder en öppen ström.
-- **Statuslogik** (`app/ports.py:service_status`): "docs" om posten saknar
-  port (ren dokumentationspost); annars "up" om porten lyssnar och
-  registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
+- **Statuslogik** (`app/ports.py:service_status`): för `kind == "systemd"`
+  avgör unitens `is-active` först - aktiv ger "up" (eller "drift" om posten
+  har en port som ingen lyssnar på), activating/deactivating ger
+  "starting"/"stopping", inactive/failed ger "drift" när porten ändå lyssnar
+  och annars "down", okänd status ger "unknown". Övriga poster: "docs" om
+  posten saknar port (ren dokumentationspost); annars "up" om porten lyssnar
+  och registrerad PID är okänd, ss-PID saknas (annan ägare) eller PID:erna
   matchar; "conflict" om porten lyssnar med annan känd PID; "down" annars.
+- **Efemära poster städas automatiskt.** `clean_dead_ephemeral_services()`
+  körs vid varje /api/services-läsning och tar bort poster med
+  `kind == "ephemeral"` vars port inte lyssnar OCH vars PID är död
+  (`os.kill(pid, 0)`; PermissionError räknas som levande, okänd PID som
+  levande). Städningen hoppas över när ss-skanningen är opålitlig, så ett
+  misslyckat `ss`-anrop aldrig raderar registret.
+- **Portalinstallerade systemd-tjänster (`svc install`).** CLI:t skriver
+  unit-filen lokalt (`~/.config/systemd/user/<projekt>.service`, override
+  via `PORTAL_SYSTEMD_USER_DIR`) med markören `X-Portal-Managed=true`,
+  kör `daemon-reload` (+ `enable` vid `--autostart`) och registrerar bara
+  unitNAMNET i portalen - startkommandot skickas aldrig över HTTP.
+  Kortvyn får en Starta/Stoppa-knapp som POST:ar
+  /api/services/{name}/start|stop; endpointen kräver `kind == "systemd"`,
+  giltigt unitnamn OCH `portal_managed_systemd_unit()` (portalen styr bara
+  units den själv installerat - att bara LÄSA loggen har en lägre grind,
+  se loggströmningen ovan).
 - **Dokumentationsposter (port NULL).** En registrering utan port är en
   ren dokumentationspost och kräver docs_path eller docs_md (valideras i
   POST /api/services). Portkolumnen tillåter NULL men behåller UNIQUE
@@ -147,6 +182,20 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   `.md` kan inte köra skript. Andra filtyper är oförändrade (även HTML-
   delningar serveras rakt av; deras highlighting är uppladdarens ansvar).
   Renderaren är generell (`render_text_page` för framtida `.txt`).
+- **Testlistor (`/test`, prototyp).** Testpunkter betas av i ett UI i
+  stället för punkt för punkt i chatten. Egna tabeller
+  (`test_sessions`/`test_items` i `app/testruns.py`, inte `database.py` -
+  prototypen hålls samlad i sin egen modul). Punkterna skickas ALLTID in
+  explicit som markdown (`N. ` i radbörjan, grupperat med `## rubrik`);
+  portalen letar aldrig upp dem själv ur en taskbeskrivning, eftersom en
+  numrerad lista där lika gärna kan vara något annat än testfall. Statusar:
+  otestad/ok/fel/hoppad plus fri anteckning. `close_session()` stänger
+  sessionen och lägger sammanfattningen som backlog-kommentar via CLI:t med
+  aktören `ai:portal` - misslyckas skrivningen stängs sessionen ändå och
+  texten returneras, så portalen aldrig blir beroende av backlog. Kortet på
+  förstasidan visar matchande sessions framsteg (matchning på
+  `backlog_project`, annars projektnamnet).
+
 - **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
   delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`
   räcker. Beräknas vid import i config.py.
