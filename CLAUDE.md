@@ -182,10 +182,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   `.md` kan inte köra skript. Andra filtyper är oförändrade (även HTML-
   delningar serveras rakt av; deras highlighting är uppladdarens ansvar).
   Renderaren är generell (`render_text_page` för framtida `.txt`).
-- **Testlistor (`/test`, prototyp).** Testpunkter betas av i ett UI i
+- **Testlistor (`/test`).** Testpunkter betas av i ett UI i
   stället för punkt för punkt i chatten. Egna tabeller
   (`test_sessions`/`test_items` i `app/testruns.py`, inte `database.py` -
-  prototypen hålls samlad i sin egen modul). Punkterna skickas ALLTID in
+  testlistorna hålls samlade i sin egen modul). Punkterna skickas ALLTID in
   explicit som markdown (`N. ` i radbörjan, grupperat med `## rubrik`);
   portalen letar aldrig upp dem själv ur en taskbeskrivning, eftersom en
   numrerad lista där lika gärna kan vara något annat än testfall. Statusar:

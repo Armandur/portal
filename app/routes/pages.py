@@ -118,7 +118,7 @@ def test_sessions_index(request: Request):
 
 @router.get("/test/{slug}", response_class=HTMLResponse)
 def test_session(request: Request, slug: str):
-    """Testlista att beta av (prototyp, TASK-803 i infra)."""
+    """Testlista att beta av."""
     session = testruns.get_session(slug)
     if session is None:
         raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")

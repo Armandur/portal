@@ -1,7 +1,6 @@
 """Testsessioner: beta av en lista testpunkter i ett UI i stället för i chatten.
 
-PROTOTYP (TASK-803 i infra). Portalen äger sessionen medan testningen pågår -
-backlog är fel gränssnitt för att utföra testning, men rätt ställe för
+Portalen äger sessionen medan testningen pågår - backlog är fel gränssnitt för att utföra testning, men rätt ställe för
 spårbarhet efteråt. Punkterna skickas in explicit av den som skapar sessionen;
 portalen parsar aldrig taskbeskrivningar på egen hand, eftersom en numrerad
 lista i en beskrivning lika gärna kan vara utredningspunkter eller ett

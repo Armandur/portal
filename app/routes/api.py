@@ -435,7 +435,7 @@ def delete_theme(name: str):
     return {"status": "borttagen", "name": name}
 
 
-# --- Testsessioner (prototyp, TASK-803 i infra) ------------------------------
+# --- Testsessioner -----------------------------------------------------------
 
 
 class TestItemUpdate(BaseModel):
