@@ -527,7 +527,8 @@ def main():
     q.add_argument("--title", required=True, help="Rubrik som visas på sidan")
     q.add_argument("--items-file", required=True,
                    help="Markdown med numrerade punkter, grupperade med ## rubrik")
-    q.add_argument("--task", help="Task-ref, t.ex. TASK-780 (dit sammanfattningen skrivs)")
+    q.add_argument("--task", help="Task-ref, t.ex. TASK-780 (dit sammanfattningen skrivs). "
+                                  "UTELÄMNAD: resultatet sparas inte mot någon task - ta med den")
     q.add_argument("--project", help="Projekt tasken hör till")
     q.set_defaults(func=cmd_test_create)
 
