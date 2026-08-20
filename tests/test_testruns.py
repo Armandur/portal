@@ -26,6 +26,26 @@ class LinkifyTest(unittest.TestCase):
         self.assertIn("<code>&lt;b&gt;hej&lt;/b&gt;</code>", ut)
         self.assertNotIn("<b>", ut)
 
+    def test_fetstil_blir_strong(self):
+        ut = testruns.linkify("Klicka på **Exportera CSV** och vänta")
+        self.assertIn("Klicka på <strong>Exportera CSV</strong> och vänta", ut)
+
+    def test_fetstil_i_kod_ror_inte_stjarnorna(self):
+        ut = testruns.linkify("Kör `echo **hej**` i skalet")
+        self.assertIn("<code>echo **hej**</code>", ut)
+        self.assertNotIn("<strong>", ut)
+
+    def test_lank_inuti_fetstil_blir_klickbar(self):
+        ut = testruns.linkify("**Öppna [anmälan](http://ubuntu-ai:8100/a)**")
+        self.assertIn('<a href="http://ubuntu-ai:8100/a"', ut)
+        self.assertTrue(ut.startswith("<strong>Öppna <a"), ut)
+        self.assertIn("</a></strong>", ut)
+
+    def test_ensamma_stjarnor_blir_tecken(self):
+        ut = testruns.linkify("Skriv 2 ** 3 i fältet")
+        self.assertNotIn("<strong>", ut)
+        self.assertIn("**", ut)
+
     def test_ensam_backtick_blir_tecken(self):
         ut = testruns.linkify("En ensam ` ska inte starta kod")
         self.assertNotIn("<code>", ut)

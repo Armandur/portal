@@ -332,6 +332,9 @@ def delete_session(slug: str) -> bool:
 _MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
 _CODE_RE = re.compile(r"`([^`\n]+)`")
+# Fetstil: **text**. Kräver icke-blanktecken innanför stjärnorna, så "2 ** 3"
+# och en ensam ** i texten inte drar igång ett spann.
+_BOLD_RE = re.compile(r"\*\*(\S([^\n]*?\S)?)\*\*")
 # Block med tre backticks. Kräver avslutande rad - ett oavslutat block matchar
 # inte och visas som tecken, i stället för att äta resten av punkten.
 # Språktaggen (```sh) fångas och kastas: ingen syntaxfärgning här, punkterna
@@ -355,7 +358,9 @@ def linkify(text: str) -> str:
 
     Kodspann plockas ut FÖRST, så en adress inuti backticks blir kod och inte
     en länk - det är kommandot man ska kopiera, inte något att klicka på.
-    Ordningen är block -> kodspann -> länkar, hela vägen ner.
+    Ordningen är block -> kodspann -> fetstil -> länkar, hela vägen ner:
+    stjärnorna i **text** ska inte tolkas inuti kod, men en länk inuti
+    fetstilen ska fortfarande bli klickbar.
     """
     ut: list[str] = []
 
@@ -378,13 +383,23 @@ def linkify(text: str) -> str:
             pos = m.end()
         skriv_med_bara_urler(segment[pos:])
 
+    def skriv_med_fetstil(segment: str) -> None:
+        pos = 0
+        for m in _BOLD_RE.finditer(segment):
+            skriv_med_lankar(segment[pos:m.start()])
+            ut.append("<strong>")
+            skriv_med_lankar(m.group(1))
+            ut.append("</strong>")
+            pos = m.end()
+        skriv_med_lankar(segment[pos:])
+
     def skriv_med_kodspann(segment: str) -> None:
         pos = 0
         for m in _CODE_RE.finditer(segment):
-            skriv_med_lankar(segment[pos:m.start()])
+            skriv_med_fetstil(segment[pos:m.start()])
             ut.append(f"<code>{html.escape(m.group(1))}</code>")
             pos = m.end()
-        skriv_med_lankar(segment[pos:])
+        skriv_med_fetstil(segment[pos:])
 
     pos = 0
     for m in _FENCE_RE.finditer(text):
