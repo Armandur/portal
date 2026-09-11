@@ -77,22 +77,32 @@ def service_docs(request: Request, name: str):
 
 
 @router.get("/share/{uid}")
-def share_root(uid: str):
+def share_root(uid: str, download: int = 0):
     share = db.get_share(uid)
     if share is None:
         raise HTTPException(404, "Delningen finns inte eller har gått ut.")
     # Kanonisk URL med filnamn (så webbläsaren namnger nedladdningen rätt)
-    return RedirectResponse(f"/share/{uid}/{share['filename']}", status_code=302)
+    target = f"/share/{uid}/{share['filename']}"
+    if download:
+        target += "?download=1"
+    return RedirectResponse(target, status_code=302)
 
 
 @router.get("/share/{uid}/{filename}")
-def share_file(uid: str, filename: str, raw: int = 0):
+def share_file(uid: str, filename: str, raw: int = 0, download: int = 0):
     share = db.get_share(uid)
     if share is None or share["filename"] != filename:
         raise HTTPException(404, "Delningen finns inte eller har gått ut.")
     path = SHARE_DIR / uid / share["filename"]
     if not path.is_file():
         raise HTTPException(404, "Delningens fil saknas.")
+    if download:
+        return FileResponse(
+            path,
+            media_type=share["content_type"] or "application/octet-stream",
+            filename=share["filename"],
+            content_disposition_type="attachment",
+        )
     # Markdown renderas som stylad, sanerad läsvy; ?raw=1 ger källan som text.
     if Path(share["filename"]).suffix.lower() in (".md", ".markdown"):
         text = path.read_text(encoding="utf-8", errors="replace")

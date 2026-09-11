@@ -13,3 +13,8 @@ dependencies = [
     "bleach>=6.4.0",
     "pymdown-extensions>=11.0.1",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.12.0",
+]
