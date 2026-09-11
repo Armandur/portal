@@ -299,7 +299,13 @@ def cmd_share(args):
     if args.ttl is not None:
         body["ttl_minutes"] = args.ttl
     share = _request("POST", "/api/shares", body)
-    print(share["url"])
+    # URL:en på stdout, allt annat på stderr - det är det som gör utdatan pipbar.
+    download_url = f"{share['url']}?download=1"
+    if args.download:
+        print(download_url)
+    else:
+        print(share["url"])
+        print(f"Nedladdning: {download_url}", file=sys.stderr)
     if share.get("expires_at"):
         print(f"Går ut: {share['expires_at']}", file=sys.stderr)
     else:
@@ -505,6 +511,9 @@ def main():
     p.add_argument("--desc", help="Beskrivning av delningen")
     p.add_argument("--ttl", type=int,
                    help="Livslängd i minuter (0 = aldrig, tills unshare)")
+    p.add_argument("--download", action="store_true",
+                   help="Skriv ut länken som laddar ned filen i stället för "
+                        "att visa den i webbläsaren")
     p.set_defaults(func=cmd_share)
 
     p = sub.add_parser("unshare", help="Ta bort en delning (fil + post)")
