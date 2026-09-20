@@ -367,8 +367,20 @@ def _add_common_fields(p):
     )
 
 
+def _las_punkter(sokvag):
+    """Läser markdownfilen med testpunkter, med besked i stället för traceback."""
+    try:
+        return Path(sokvag).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"Hittar ingen fil på {sokvag}.", file=sys.stderr)
+        sys.exit(1)
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Kan inte läsa {sokvag}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_test_create(args):
-    text = Path(args.items_file).read_text(encoding="utf-8")
+    text = _las_punkter(args.items_file)
     body = {
         "slug": args.slug,
         "title": args.title,
@@ -379,6 +391,30 @@ def cmd_test_create(args):
     data = _request("POST", "/api/test-sessions", body)
     n = data["summary"]["total"]
     print(f"Testsession '{data['slug']}' skapad med {n} punkter.")
+    print(data["url"])
+
+
+def cmd_test_update(args):
+    body = {}
+    if args.items_file:
+        body["items_markdown"] = _las_punkter(args.items_file)
+    # bara flaggor som faktiskt gavs skickas - annars skulle en ren
+    # titeländring nolla tasken och sammanfattningen hamna ingenstans
+    if args.title is not None:
+        body["title"] = args.title
+    if args.task is not None:
+        body["task_ref"] = args.task
+    if args.project is not None:
+        body["project"] = args.project
+    if not body:
+        print("Inget att uppdatera - ange --items-file, --title, --task eller --project.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    data = _request("PATCH", f"/api/test/{args.slug}", body)
+    s = data["summary"]
+    print(f"Testsession '{data['slug']}' uppdaterad: {s['total']} punkter, "
+          f"{s['avklarat']} med status kvar.")
     print(data["url"])
 
 
@@ -540,6 +576,21 @@ def main():
                                   "UTELÄMNAD: resultatet sparas inte mot någon task - ta med den")
     q.add_argument("--project", help="Projekt tasken hör till")
     q.set_defaults(func=cmd_test_create)
+
+    q = tsub.add_parser(
+        "update",
+        help="Byt punkter eller metadata på en befintlig session",
+        description="Ersätter punkterna med innehållet i --items-file. Statusar följer "
+                    "med punkter vars text är oförändrad; nya punkter blir otestade. "
+                    "En stängd session återöppnas.",
+    )
+    q.add_argument("slug")
+    q.add_argument("--items-file", help="Markdown med numrerade punkter (hela listan, "
+                                        "inte bara tillägget)")
+    q.add_argument("--title", help="Ny rubrik")
+    q.add_argument("--task", help="Ny task-ref. Tom sträng tar bort tasken")
+    q.add_argument("--project", help="Nytt projekt. Tom sträng tar bort det")
+    q.set_defaults(func=cmd_test_update)
 
     q = tsub.add_parser("close", help="Stäng sessionen och kommentera tasken")
     q.add_argument("slug")

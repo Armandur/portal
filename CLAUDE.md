@@ -74,7 +74,7 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
   register/port/list även share/unshare/shares för fildelning,
   `install` (skriver systemd user-unit lokalt) och `test-session`
-  (create/close/delete/list/show för testlistor).
+  (create/update/close/delete/list/show för testlistor).
 - `deploy/portal.service` - systemd user unit (primär driftväg).
 - `install.sh` - uv sync + unit-installation + svc-symlink. Idempotent.
 - `Dockerfile` - reservspår, kräver --network host --pid host.
@@ -195,6 +195,16 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   texten returneras, så portalen aldrig blir beroende av backlog. Kortet på
   förstasidan visar matchande sessions framsteg (matchning på
   `backlog_project`, annars projektnamnet).
+  **`PATCH /api/test/{slug}`** byter punkter och/eller metadata. Statusar
+  följer punktens TEXT, inte dess position - en ny punkt insprängd i listan
+  ska inte flytta över alla statusar ett steg, och en omskriven punkt ska
+  testas om. Rubriken ingår inte i nyckeln (byta namn på en `##` nollställer
+  inte punkterna under den), och samma text flera gånger får sina gamla
+  statusar i tur och ordning. Positionerna skrivs om till 1..N, eftersom
+  `/api/test/{slug}/items/{position}` adresserar punkter per position.
+  Modellen skiljer utelämnat fält från `null` (`model_fields_set`) - annars
+  skulle en titeländring nolla task_ref och sammanfattningen hamna ingenstans.
+  Uppdateringen återöppnar alltid sessionen (`closed_at = NULL`).
 
 - **`PORTAL_BASE_URL`.** Bas-URL för länkar portalen serverar själv (docs,
   delningar). Utelämnar porten när `PORTAL_PORT == 80` så `http://ubuntu-ai`

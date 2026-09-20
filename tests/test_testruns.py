@@ -7,7 +7,7 @@ from starlette.requests import Request
 
 from app import database as db
 from app import testruns
-from app.routes import pages
+from app.routes import api, pages
 
 
 class LinkifyTest(unittest.TestCase):
@@ -206,6 +206,100 @@ class TestSessionSidaTest(unittest.TestCase):
     def test_okand_session_ger_404(self):
         with self.assertRaises(HTTPException) as ctx:
             pages.test_session(self._request("/test/finns-ej"), "finns-ej")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+
+class UpdateSessionTest(unittest.TestCase):
+    """Går genom API-routen, inte bara testruns - modellens fields_set är
+    halva logiken och skulle inte prövas av ett rent update_session-anrop."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.tmp.name) / "portal.db"
+        db.init_db()
+        testruns.init_schema()
+        api.create_test_session(
+            api.TestSessionCreate(
+                slug="prov",
+                title="Prov",
+                items_markdown="## R\n1. Klicka spara\n2. Ladda om sidan\n",
+                task_ref="TASK-1",
+                project="portal",
+            )
+        )
+        testruns.set_status("prov", 1, "ok", None)
+        testruns.set_status("prov", 2, "fel", "kraschar")
+
+    def tearDown(self):
+        db.DB_PATH = self.original_db_path
+        self.tmp.cleanup()
+
+    def _patch(self, **falt):
+        return api.update_test_session("prov", api.TestSessionUpdate(**falt))
+
+    def test_status_foljer_texten_inte_numret(self):
+        svar = self._patch(
+            items_markdown="## R\n1. Ny punkt först\n2. Klicka spara\n3. Ladda om sidan\n"
+        )
+        items = svar["items"]
+        self.assertEqual([i["position"] for i in items], [1, 2, 3])
+        self.assertEqual(items[0]["status"], "otestad")
+        self.assertEqual(items[1]["status"], "ok")
+        self.assertEqual(items[2]["status"], "fel")
+        self.assertEqual(items[2]["note"], "kraschar")
+
+    def test_borttagen_punkt_forsvinner(self):
+        svar = self._patch(items_markdown="1. Klicka spara\n")
+        self.assertEqual(len(svar["items"]), 1)
+        self.assertEqual(svar["summary"]["total"], 1)
+
+    def test_omdopt_rubrik_nollstaller_inte(self):
+        svar = self._patch(items_markdown="## Annan rubrik\n1. Klicka spara\n")
+        self.assertEqual(svar["items"][0]["status"], "ok")
+        self.assertEqual(svar["items"][0]["heading"], "Annan rubrik")
+
+    def test_dubbletter_far_var_sin_status(self):
+        testruns.create_session(
+            "dubbel", "Dubbel",
+            [{"heading": None, "body": "Ladda om"}, {"heading": None, "body": "Ladda om"}],
+        )
+        testruns.set_status("dubbel", 1, "ok", None)
+        testruns.set_status("dubbel", 2, "fel", None)
+        svar = api.update_test_session(
+            "dubbel", api.TestSessionUpdate(items_markdown="1. Ladda om\n2. Ladda om\n")
+        )
+        self.assertEqual([i["status"] for i in svar["items"]], ["ok", "fel"])
+
+    def test_titelandring_ror_inte_tasken(self):
+        svar = self._patch(title="Ny rubrik")
+        self.assertEqual(svar["title"], "Ny rubrik")
+        self.assertEqual(svar["task_ref"], "TASK-1")
+        self.assertEqual(svar["project"], "portal")
+        self.assertEqual(len(svar["items"]), 2)
+
+    def test_tom_task_tar_bort_tasken(self):
+        self.assertIsNone(self._patch(task_ref="")["task_ref"])
+
+    def test_stangd_session_ateroppnas(self):
+        testruns.close_session("prov", skriv_till_backlog=False)
+        self.assertIsNotNone(testruns.get_session("prov")["closed_at"])
+        self.assertIsNone(self._patch(title="Omtagning")["closed_at"])
+
+    def test_markdown_utan_punkter_ger_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(items_markdown="bara brodtext")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(len(testruns.get_session("prov")["items"]), 2)
+
+    def test_tomt_anrop_ger_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch()
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_okand_slug_ger_404(self):
+        with self.assertRaises(HTTPException) as ctx:
+            api.update_test_session("finns-ej", api.TestSessionUpdate(title="x"))
         self.assertEqual(ctx.exception.status_code, 404)
 
 

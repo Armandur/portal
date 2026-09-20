@@ -186,11 +186,18 @@ svc test-session create mitt-projekt-780 --title "Testa exportvyn" \
     --items-file testpunkter.md --task TASK-780 --project mitt-projekt
 svc test-session list
 svc test-session show mitt-projekt-780 --only fel
+svc test-session update mitt-projekt-780 --items-file testpunkter.md
 svc test-session close mitt-projekt-780
 ```
 
 Punkterna parsas ur markdown: varje testfall börjar med `N. ` i början av en
 rad, och grupperas med `## rubrik`.
+
+`update` byter ut punkterna mot innehållet i filen och kan även ändra titel,
+task och projekt (`--title`, `--task`, `--project` - flaggor du utelämnar rörs
+inte). Statusar följer med punktens text, inte dess nummer: skjuter du in en ny
+punkt först behåller de gamla sin status, och en punkt som skrivits om blir
+otestad igen. En stängd session återöppnas av en uppdatering.
 
 ### Tema-buildern
 
@@ -233,6 +240,7 @@ Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
 | GET | /api/test-sessions | Alla testlistor med framsteg |
 | POST | /api/test-sessions | Skapa testlista ur markdown |
 | GET | /api/test/{slug} | En testlista |
+| PATCH | /api/test/{slug} | Byt punkter eller metadata, återöppnar |
 | POST | /api/test/{slug}/items/{position} | Sätt status/anteckning på en punkt |
 | POST | /api/test/{slug}/close | Stäng och kommentera backlog-tasken |
 | DELETE | /api/test/{slug} | Ta bort testlista |

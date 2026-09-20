@@ -482,6 +482,50 @@ def create_test_session(payload: TestSessionCreate):
     return {**session, "url": testruns.session_url(payload.slug)}
 
 
+class TestSessionUpdate(BaseModel):
+    """Alla fält valfria - bara de som faktiskt skickas ändras.
+
+    Skillnaden mellan utelämnat och null är hela poängen: `task_ref: null`
+    tar bort tasken, medan ett utelämnat fält låter den stå kvar.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    items_markdown: str | None = None
+    task_ref: str | None = None
+    project: str | None = None
+
+
+@router.patch("/test/{slug}")
+def update_test_session(slug: str, payload: TestSessionUpdate):
+    """Byter punkter och/eller metadata på en session och återöppnar den."""
+    satta = payload.model_fields_set
+    kwargs = {}
+    if "title" in satta and payload.title is not None:
+        kwargs["title"] = payload.title
+    if "task_ref" in satta:
+        kwargs["task_ref"] = payload.task_ref
+    if "project" in satta:
+        kwargs["project"] = payload.project
+
+    if payload.items_markdown is not None:
+        items = testruns.parse_items(payload.items_markdown)
+        if not items:
+            raise HTTPException(
+                400,
+                "Hittade inga numrerade punkter. Varje testfall ska börja med "
+                "'1. ', '2. ' och så vidare.",
+            )
+        kwargs["items"] = items
+
+    if not kwargs:
+        raise HTTPException(400, "Inget att uppdatera - skicka punkter eller metadata.")
+
+    session = testruns.update_session(slug, **kwargs)
+    if session is None:
+        raise HTTPException(404, f"Ingen testsession med namnet '{slug}' finns.")
+    return {**session, "url": testruns.session_url(slug)}
+
+
 @router.post("/test/{slug}/close")
 def close_test_session(slug: str):
     """Stänger sessionen och lägger sammanfattningen som kommentar på tasken."""

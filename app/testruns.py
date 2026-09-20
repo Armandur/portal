@@ -10,6 +10,7 @@ verifieringsprotokoll.
 import html
 import re
 import subprocess
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from app.config import BACKLOG_BIN, BACKLOG_PROFILE, SERVICE_HOST, PORTAL_PORT
@@ -144,6 +145,86 @@ def create_session(
         return session_id
     finally:
         conn.close()
+
+
+# Skiljer "flaggan utelämnad" från "sätt fältet till tomt". Utan den skulle
+# en uppdatering av bara titeln nolla task_ref, och sammanfattningen vid
+# stängning hamna ingenstans.
+OFORANDRAD = object()
+
+
+def update_session(
+    slug: str,
+    items: list[dict] | None = None,
+    title=OFORANDRAD,
+    task_ref=OFORANDRAD,
+    project=OFORANDRAD,
+) -> dict | None:
+    """Ersätter punkterna och/eller metadatan på en befintlig session.
+
+    Statusar följer med punktens TEXT, inte dess nummer: skjuter man in en ny
+    punkt mitt i listan ärver inte resten av punkterna fel status. Punkter som
+    försvinner ur markdownen tas bort, nya kommer in som otestade. Rubriken
+    ingår inte i nyckeln - att döpa om en ## ska inte nollställa punkterna
+    under den. Förekommer samma text flera gånger delas de gamla statusarna
+    ut i tur och ordning.
+
+    Sessionen återöppnas alltid (closed_at nollas), eftersom en uppdatering
+    betyder att det finns mer att testa.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM test_sessions WHERE slug = ?", (slug,)
+        ).fetchone()
+        if row is None:
+            return None
+        session_id = row["id"]
+
+        falt = []
+        if title is not OFORANDRAD:
+            falt.append(("title", title))
+        if task_ref is not OFORANDRAD:
+            falt.append(("task_ref", task_ref or None))
+        if project is not OFORANDRAD:
+            falt.append(("project", project or None))
+        falt.append(("closed_at", None))
+        conn.execute(
+            f"UPDATE test_sessions SET {', '.join(k + ' = ?' for k, _ in falt)} "
+            "WHERE id = ?",
+            [v for _, v in falt] + [session_id],
+        )
+
+        if items is not None:
+            tidigare: dict[str, deque] = defaultdict(deque)
+            for r in conn.execute(
+                "SELECT body, status, note, updated_at FROM test_items "
+                "WHERE session_id = ? ORDER BY position",
+                (session_id,),
+            ):
+                tidigare[r["body"]].append((r["status"], r["note"], r["updated_at"]))
+
+            conn.execute("DELETE FROM test_items WHERE session_id = ?", (session_id,))
+            rader = []
+            for i, it in enumerate(items, start=1):
+                kvar = tidigare.get(it["body"])
+                status, note, updated_at = (
+                    kvar.popleft() if kvar else ("otestad", None, None)
+                )
+                rader.append(
+                    (session_id, i, it.get("heading"), it["body"], status, note, updated_at)
+                )
+            conn.executemany(
+                "INSERT INTO test_items "
+                "(session_id, position, heading, body, status, note, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rader,
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+    return get_session(slug)
 
 
 def get_session(slug: str) -> dict | None:
