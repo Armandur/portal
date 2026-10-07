@@ -147,6 +147,193 @@ Skapa >10 done-tasks + en lågprio öppen; bekräfta att den öppna syns i /api/
 
 ---
 
+## [P3][todo] [portal] svc share: rendera .md-filer som formaterad HTML i stället för råtext
+
+Delade .md-filer (t.ex. processkartläggningarnas sammanfattningar) visas som råtext i webbläsaren. Rendera markdown till HTML med läsbar typografi, särskilt för mobil. Uppstod 2026-10-07 vid delning av processer/begravning.sammanfattning.md.
+
+- ID: `01M4B5F78PTN53PY91ZHXJJEMZ`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P3][done] [portal] Lägg till --download på svc share som ger nedladdningslänken
+
+## Context
+
+Portalen stöder `?download=1` sedan TASK-1677, men `svc share` känner inte
+till parametern. Den som vill ge någon en nedladdningslänk måste veta att
+parametern finns och klistra ihop URL:en för hand. Det var precis det som
+saknades när en delad HTML-fil skulle sparas på en mobil.
+
+## Acceptance criteria
+
+- [ ] `svc share fil.html --download` skriver nedladdningslänken
+      (`...?download=1`) på stdout.
+- [ ] Utan flaggan är stdout oförändrat: exakt en rad med läslänken, så
+      `svc share x | xclip` fortsätter fungera.
+- [ ] Utan flaggan skriver kommandot en hint på stderr med
+      nedladdningslänken, i samma kanal som "Går ut:"-raden redan använder.
+- [ ] Hjälptexten (`svc share -h`) förklarar flaggan på svenska.
+- [ ] Prov i `tests/test_svc_share.py` som kör `cmd_share` med och utan
+      flaggan och kontrollerar vad som hamnar på stdout respektive stderr.
+
+## Implementation hints
+
+- `cli/svc`: `cmd_share` på rad 286-306, parsern på rad 497-508.
+- Kontraktet att bevara: URL på stdout, all metadata på stderr. Det är det
+  som gör utdatan pipbar.
+- Provmönster finns i `tests/test_svc_install.py`: CLI:t laddas med
+  `SourceFileLoader` eftersom `cli/svc` saknar `.py`-ändelse. Mocka
+  `_request` och fånga utdatan med `contextlib.redirect_stdout` /
+  `redirect_stderr`.
+
+## Verification
+
+- `cd ~/workspace/portal && uv run python -m unittest tests.test_svc_share -v`
+- `cd ~/workspace/portal && uv run python -m unittest discover -s tests`
+- Manuellt: `svc share nagon-fil.html --download` ger en URL som slutar på
+  `?download=1`, och `curl -s -D - -o /dev/null "<url>"` visar
+  `content-disposition: attachment`.
+
+- ID: `01M27YH08WQYX4SM0DDMS9K37N`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P3][done] [portal] Lägg till ?download=1 på share-routen som tvingar nedladdning
+
+## Context
+
+Delade HTML-filer renderas i webbläsaren i stället för att laddas ned, och det
+går inte att styra. `share_file` i `app/routes/pages.py` svarar alltid med
+`content_disposition_type="inline"` och har ingen parameter som ändrar det.
+
+Uppmätt 2026-09-07: en delad `.html` svarar `content-type: text/html` utan
+`Content-Disposition`, så en mobil öppnar filen i stället för att spara den.
+Dagens omvägar är alla dåliga: zippa filen, byta filändelse så typgissningen
+faller tillbaka på `application/octet-stream`, eller långtrycka på länken i
+mobilwebbläsaren.
+
+## Acceptance criteria
+
+- [ ] `GET /share/{uid}/{filnamn}?download=1` svarar med
+      `Content-Disposition: attachment` och filnamnet i headern.
+- [ ] Samma URL utan parametern beter sig exakt som i dag: `inline`, och
+      markdown renderas fortfarande som läsvy.
+- [ ] `?download=1` fungerar även för `.md`. Markdown-grenen returnerar tidigt
+      (raderna 97-102) och når aldrig `FileResponse`, så den behöver egen
+      hantering: ge källfilen som nedladdning i stället för läsvyn.
+- [ ] `GET /share/{uid}?download=1` behåller parametern genom redirecten i
+      `share_root`. Den bygger målet från filnamnet och tappar query-strängen
+      som koden ser ut nu.
+- [ ] Ett filnamn med å, ä eller ö laddas ned med rätt namn. Headern behöver
+      RFC 5987-kodning (`filename*=UTF-8''...`). Starlette sköter det när
+      `FileResponse` får `filename=`, men provet ska bekräfta det.
+- [ ] `?download=0` och utelämnad parameter ger samma svar.
+- [ ] Nya prov i `tests/test_share.py` anropar ROUTEN, inte bara hjälpfunktioner.
+      Det finns inga prov för share-routerna i dag.
+
+## Implementation hints
+
+- Routen: `app/routes/pages.py:88` (`share_file`), redirecten på rad 79
+  (`share_root`), `FileResponse`-anropet på raderna 104-108.
+- Parametern deklareras som `download: int = 0`, samma mönster som befintliga
+  `raw: int = 0`.
+- `FileResponse` tar `content_disposition_type="attachment"` och `filename=`.
+  För markdown-grenen: returnera `FileResponse` i stället för
+  `PlainTextResponse`/`HTMLResponse` när `download` är satt.
+- `RedirectResponse` i `share_root`: bygg målet med
+  `?download=1` när parametern kom in, annars oförändrat.
+- Provmönster finns i `tests/test_service_api.py`: `unittest.TestCase`,
+  temporär `db.DB_PATH`, `db.init_db()` i `setUp`. Använd
+  `fastapi.testclient.TestClient` mot appen, och peka om `SHARE_DIR` till en
+  temporär katalog med en riktig fil i.
+
+## Verification
+
+- `cd ~/workspace/portal && uv run pytest tests/test_share.py -q`
+- `uv run pytest -q` (hela sviten grön, inga regressioner i share-vyn)
+- Manuellt mot en körande instans:
+  `curl -s -D - -o /dev/null "http://ubuntu-ai:PORT/share/UID/fil.html?download=1" | grep -i content-disposition`
+  ska visa `attachment; filename=...`. Samma anrop utan `?download=1` ska
+  inte ha någon `Content-Disposition`-header alls, eller `inline`.
+- Manuellt: `curl -s -D - -o /dev/null "http://ubuntu-ai:PORT/share/UID?download=1"`
+  ska ge en 302 vars `location` fortfarande bär `download=1`.
+
+- ID: `01M1XQFKVWEME29Z725R544XJN`
+- Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P3][todo] [portal] svc: städa bort döda registreringar och varna för gamla dev-tjänster
+
+Mätt 2026-08-15 på ubuntu-ai: fyra dev-servrar står uppe (bokhylla backend 8002, bokhylla poc 8006, matbutiker-dev 8700, matstatistik 8800) och yxsamling-test är registrerad men nere.
+
+Konventionen i globala CLAUDE.md är att den som startar en dev-server också stoppar den och avregistrerar. Det följs inte i praktiken, och registret blir därmed missvisande - vilket är värre än inget register, eftersom nästa Claude litar på det när den väljer port.
+
+Förslag: en timer som avregistrerar poster med status down, och som flaggar dev-tjänster registrerade för mer än ett dygn sedan.
+
+Extra skäl just nu: inför M70q-flytten (TASK-1206) ska bara det som förtjänar en systemd-enhet på nya maskinen flyttas. Ett städat register är förutsättningen för att kunna avgöra det.
+
+Klart när: svc list bara visar sådant som faktiskt kör eller medvetet är permanent.
+
+- ID: `01M01D1C4PH26PKQ58YAHAH0HD`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P3][done] [portal] Kopieringsknapp på kodblock i testlistan
+
+Rasmus 2026-08-08. Följd av TASK-1108 (kodblock i testpunkter). Ett block ska gå att kopiera med en knapp i stället för att markeras för hand på telefonen.
+
+Knapp, inte klick på hela rutan: blocket scrollar i sidled, så en dragning är en scroll och gränsen mot klick är suddig; klick på hela rutan tar dessutom ifrån en möjligheten att markera en del av kommandot.
+
+Kärnfaktum: navigator.clipboard finns BARA i säker kontext, och portalen serveras över http - API:t är undefined på http://ubuntu-ai:PORT (mätt). Kopieringen går därför via document.execCommand med ett dolt element som markeras med ett Range. Clipboard-API:t provas först ändå, så knappen blir rätt av sig själv om portalen går via https (se tailscale-serve-utredningen).
+
+Fallgrop som kostade en runda: en dold <textarea> fungerar INTE - value sätter inga barnnoder, så selectNodeContents markerar tomt och kopieringen tar med sig ingenting. execCommand svarar ändå true. Verifiera alltid genom att klistra in efteråt, aldrig på returvärdet.
+
+- ID: `01KZHJ9RYDA219S68NS17RQ59G`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P3][done] [portal] Kodblock (tre backticks) i testpunkter - parse_items slår ihop raderna
+
+Följd av TASK-1090, som gav inline-kod (enkla backticks) i testpunkter. Block med tre backticks kan inte stödjas som det ser ut nu: parse_items (app/testruns.py:85) slår ihop en punkts rader med mellanslag, så ett block når aldrig linkify med sina radbrytningar - en flerradig sekvens eller ett utdrag ur en logg blir en enda lång rad.
+
+Kräver tre saker: parse_items behåller radbrytningar inuti ett fence, linkify renderar fencen till <pre><code>, och punkttexten i test.html byter från p class=body till div (ett pre inuti p är ogiltigt och browsern stänger p-taggen). CSS behöver ett pre som scrollar internt och aldrig spränger sidbredden på mobil.
+
+Öppen fråga: ska språktaggen (tre backticks följt av sh) göra något, eller bara ätas? Ingen syntaxfärgning i testlistan - det är inte en läsvy för kod utan punkter man ska kunna kopiera.
+
+En kopieringsknapp per block är nästa steg efter detta, inte en del av det.
+
+- ID: `01KZHHDE3PMG5S72MH8ANWPT4F`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
+## [P3][done] [portal] Testlistan renderar kod som vanlig text - backticks blir inget
+
+Rasmus 2026-08-08, sett i testlistan för hemslojd TASK-1033. Punkter med kommandon i backticks visas som rå text med citattecken runt - alltså exakt så här - i stället för som kod. Kommandon som ska kopieras och köras på en server är svåra att skilja från prosan, och en lång sudo-rad går inte att markera rent.
+
+linkify() i app/testruns.py rad 310 escapar all text och gör bara http(s)-adresser klickbara; ingen annan markdown tolkas. Utöka den med inline-kod (enkla backticks) till <code>, och överväg indragna eller staplade block (tre backticks) till <pre>. Ordningen mot linkifieringen måste bestämmas: en URL INUTI backticks ska bli kod, inte en länk.
+
+Escapningen är avsiktlig och måste stå kvar - allt utom det som uttryckligen stöds ska visas som tecken. Se kommentaren i linkify.
+
+En kopieringsknapp per kodblock vore nästa steg, men rendering först: det är den som gör punkterna läsbara på telefonen.
+
+- ID: `01KZGYGPEP2XGXHKS0RRYGK998`
+- Type: improvement
+- Actor: ai:claude-code
+
+---
+
 ## [P3][done] [portal] Sortera delningssektionen, med skapad-när som kolumn
 
 Todo från Rasmus 2026-08-03 (dokumenterad, inte påbörjad).
@@ -457,6 +644,20 @@ README.md, .gitignore/backlog.md.
 
 - ID: `01KXV5764CX6564FPW6H89A51B`
 - Type: feature
+- Actor: ai:claude-code
+
+---
+
+## [P4][done] [portal] Tema-buildern: Kopiera-knappen kopierar aldrig, den markerar
+
+Hittat 2026-08-08 under TASK-1110. Knappen anropar navigator.clipboard.writeText med en catch som markerar texten i stället. Portalen serveras över http, där navigator.clipboard är undefined (mätt: window.isSecureContext === false) - alltså tas fallbacken ALLTID. Knappen säger Kopiera men markerar bara, och byter aldrig till 'Kopierat!'.
+
+Fixen finns redan i app/templates/test.html: kopieraText() provar clipboard-API:t först och faller tillbaka på document.execCommand mot ett dolt element som markeras med ett Range. Lyft ut den till app/static/utils.js och använd den på båda ställena.
+
+Obs: en dold <textarea> fungerar inte - value sätter inga barnnoder, så selectNodeContents markerar tomt och kopieringen tar med sig ingenting medan execCommand ändå svarar true. Verifiera genom att klistra in, aldrig på returvärdet.
+
+- ID: `01KZHJG47V5VESEE02SW0PNA6V`
+- Type: bug
 - Actor: ai:claude-code
 
 ---
