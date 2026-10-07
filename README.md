@@ -211,6 +211,46 @@ Teman kan sparas namngivet och hämtas rått via
 `GET /api/themes/{namn}/tokens.css`, så ett tema kan designas i webbläsaren
 och hämtas in i ett projekt utan att kopieras för hand.
 
+### Ollama-växlaren
+
+http://ubuntu-ai:8890/#ollama bestämmer vilken LLM-server projekten pratar
+med. Projekten läser adressen i stället för att hårdkoda den:
+
+```python
+BAS = requests.get("http://ubuntu-ai:8890/api/ollama/active").json()["url"]
+```
+
+`GET /api/ollama/active` är en ren databasuppslagning och rör aldrig
+nätverket - varje LLM-anrop passerar den, så den får inte betala för en
+hälsokoll. Kortet frågar i stället `?probe=1` och visar vilka endpoints som
+svarar och hur många modeller de har.
+
+Kortet visar också vilken modell servern har laddad just nu, hur stor andel
+av den som ligger i VRAM, kontextlängden och hur länge keep-alive håller den
+kvar. Ligger mindre än halva modellen på GPU:n märks det i färgen. Står det
+"Ingen modell laddad" får nästa anrop betala modelladdningen.
+
+Växlingen är manuell. Portalen byter inte endpoint av sig själv när den
+aktiva maskinen är nedsläckt.
+
+#### Anspråk på en maskin
+
+En lång körning som inte vill bli avbruten tar ett anspråk, ungefär som
+filanspråken i `arbetar`:
+
+```sh
+curl -X POST .../api/ollama/endpoints/rasmus-dator3/claim \
+  -H 'Content-Type: application/json' \
+  -d '{"agare": "seriedatabas", "minuter": 1320, "notis": "8000 sidor"}'
+```
+
+Anspråket är rådgivande. Det spärrar ingenting - det talar om att någon kör,
+så nästa session vet att en omladdning där stör något pågående. Det upphör av
+sig självt vid utgångstiden, så ett glömt anspråk låser inte maskinen.
+
+Läsvägen rör aldrig nätverket, så en session kan fråga före varje batch.
+Ett eget anspråk går att förlänga genom att ta det igen med samma ägare.
+
 ## API-översikt
 
 Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
@@ -228,6 +268,14 @@ Interaktiv API-dokumentation: http://ubuntu-ai:8890/api/docs
 | POST | /api/services/{name}/stop | Stoppa portalinstallerad systemd-tjänst |
 | GET | /api/ports | Lyssnande portar + registrerade tjänster |
 | POST | /api/ports/reserve | Reservera ledig port, svarar {"port": N} |
+| GET | /api/ollama/active | Aktiv LLM-endpoint: {name, url}. Ingen nätverkstrafik |
+| GET | /api/ollama/endpoints | Alla endpoints. `?probe=1` ger liveness, modellista, vad som är laddat (GPU-andel, kontext, tid kvar) och ollama-version |
+| POST | /api/ollama/endpoints | Lägg till eller uppdatera endpoint (`stopgap: true` märker den som tillfällig) |
+| GET | /api/ollama/endpoints/{name}/claim | Är någon igång på maskinen? Ren DB-läsning |
+| POST | /api/ollama/endpoints/{name}/claim | Ta rådgivande anspråk (`agare`, `minuter`, `notis`). 409 om någon annan hunnit före |
+| DELETE | /api/ollama/endpoints/{name}/claim | Släpp anspråket. `?agare=` släpper bara det egna |
+| POST | /api/ollama/active | Växla aktiv endpoint |
+| DELETE | /api/ollama/endpoints/{name} | Ta bort endpoint (inte den aktiva) |
 | GET | /api/todos | Öppna todos per backlog-projekt |
 | GET | /api/shares | Aktiva delningar |
 | POST | /api/shares | Skapa delning (fil base64-kodad i JSON) |

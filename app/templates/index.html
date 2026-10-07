@@ -28,6 +28,37 @@
       </div>
     </section>
 
+    <section id="ollama">
+      <div class="section-head">
+        <h2>Ollama-endpoint</h2>
+        <small class="muted">Vilken LLM-server projekten pratar med</small>
+      </div>
+      <p class="muted">
+        Klienter läser <code>GET /api/ollama/active</code> och får
+        <code>{"name", "url"}</code> tillbaka. Växla här, så följer alla med.
+      </p>
+      <div id="ollama-endpoints" class="cards">
+        <p class="muted">Laddar endpoints...</p>
+      </div>
+      <p id="ollama-message" class="muted" aria-live="polite"></p>
+      <details>
+        <summary>Lägg till endpoint</summary>
+        <form id="ollama-form" class="ollama-form">
+          <label>Namn
+            <input name="namn" required placeholder="windows-3080ti"
+                   pattern="[a-z0-9][a-z0-9-]*" maxlength="32">
+          </label>
+          <label>Adress
+            <input name="url" required type="url" placeholder="http://192.168.1.50:11434">
+          </label>
+          <label>Beskrivning
+            <input name="beskrivning" placeholder="Stationära datorn, RTX 3080 Ti">
+          </label>
+          <button type="submit">Lägg till</button>
+        </form>
+      </details>
+    </section>
+
     <section>
       <div class="section-head">
         <h2>Todos</h2>
@@ -76,5 +107,6 @@
 
   <script src="/static/utils.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/ollama.js"></script>
 </body>
 </html>

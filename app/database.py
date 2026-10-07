@@ -48,6 +48,20 @@ CREATE TABLE IF NOT EXISTS shares (
     expires_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ollama_endpoints (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    url TEXT NOT NULL,
+    description TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    stopgap INTEGER NOT NULL DEFAULT 0,
+    claimed_by TEXT,
+    claimed_until TEXT,
+    claim_note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS themes (
     id INTEGER PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
@@ -106,6 +120,10 @@ def init_db() -> None:
         _ensure_column(conn, "services", "autostart", "INTEGER DEFAULT 0")
         _ensure_column(conn, "services", "log_path", "TEXT")
         _ensure_column(conn, "services", "backlog_project", "TEXT")
+        _ensure_column(conn, "ollama_endpoints", "stopgap", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "ollama_endpoints", "claimed_by", "TEXT")
+        _ensure_column(conn, "ollama_endpoints", "claimed_until", "TEXT")
+        _ensure_column(conn, "ollama_endpoints", "claim_note", "TEXT")
         conn.commit()
     finally:
         conn.close()

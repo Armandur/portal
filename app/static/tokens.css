@@ -266,3 +266,17 @@ th.sorted { color: var(--pico-primary); }
   margin: 0 0 0.5rem;
   font-size: 0.85rem;
 }
+
+/* Ollama-växlaren */
+.ollama-active { border-color: var(--docs); }
+.ollama-fel { color: var(--down); }
+.ollama-form { display: grid; gap: 0.5rem; margin-top: 0.75rem; }
+.ollama-form button { width: fit-content; }
+.ollama-laddad { margin: 0.35rem 0; font-size: 0.85rem; line-height: 1.4; }
+.ollama-laddad strong { margin-right: 0.4rem; }
+.ollama-delvis { color: var(--conflict); }
+.ollama-ansprak { margin: 0.35rem 0; font-size: 0.85rem; color: var(--conflict); }
+.ollama-ansprak .muted { margin-left: 0.4rem; }
+/* Badgen "Aktiv" ligger i samma flexrad som knapparna och sträcks annars
+   ut till deras höjd. */
+.card-links .badge { align-self: center; }

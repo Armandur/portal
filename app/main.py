@@ -13,8 +13,8 @@ from app.config import BASE_DIR, PORTAL_PORT
 from app.database import clean_expired_shares, init_db, upsert_service
 from app.ledger import import_ledger, write_ledger
 from app.ports import clean_dead_ephemeral_services
-from app.routes import api, pages
-from app import testruns
+from app.routes import api, ollama as ollama_routes, pages
+from app import ollama, testruns
 
 
 def _register_self() -> None:
@@ -42,6 +42,7 @@ def _register_self() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     testruns.init_schema()
+    ollama.ensure_seed()
     import_ledger()
     clean_dead_ephemeral_services()
     _register_self()
@@ -60,4 +61,5 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 app.include_router(api.router)
+app.include_router(ollama_routes.router)
 app.include_router(pages.router)
