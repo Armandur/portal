@@ -124,6 +124,27 @@ th { background: var(--code-bg); }
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 @@PYGMENTS@@
+/* Utskrift: papperslayout oavsett färgschema. Verktygsraden och kortramen
+   hör till skärmen; på papper ska bara texten synas, i svart på vitt. */
+@media print {
+  :root { --bg: #fff; --surface: #fff; --text: #000; --muted: #444;
+          --border: #999; --accent: #000; --code-bg: #f2f2f2; }
+  html { font-size: 11pt; }
+  body { background: #fff; color: #000; line-height: 1.45; }
+  .wrap { max-width: none; margin: 0; padding: 0; }
+  .bar { display: none; }
+  .doc { background: #fff; border: none; border-radius: 0; padding: 0; }
+  a { color: #000; text-decoration: underline; }
+  h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
+  p, li, blockquote { orphans: 3; widows: 3; }
+  pre, .codehilite, .tablewrap, table, img, blockquote { break-inside: avoid; page-break-inside: avoid; }
+  pre, .codehilite { white-space: pre-wrap; overflow: visible; background: #f2f2f2 !important; }
+  .codehilite * { color: #000 !important; background: none !important; }
+  .tablewrap { overflow: visible; }
+  th, td { border-color: #999; }
+  th { background: #eee; }
+  @page { margin: 2cm; }
+}
 </style>
 </head>
 <body>

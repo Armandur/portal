@@ -87,6 +87,18 @@ class ShareRouteTest(unittest.TestCase):
             'attachment; filename="anteckning.md"',
         )
 
+    def test_markdown_reader_has_print_stylesheet(self):
+        """Utskrift ska ge papperslayout: verktygsraden bort, vit bakgrund."""
+        self.create_share("md321", "rapport.md", b"# Rubrik\n\nText.\n", "text/markdown")
+
+        page = self.client.get("/share/md321/rapport.md").text
+
+        self.assertIn("@media print", page)
+        print_css = page.split("@media print", 1)[1]
+        self.assertIn(".bar { display: none; }", print_css)
+        self.assertIn("body { background: #fff; color: #000;", print_css)
+        self.assertIn("@page { margin: 2cm; }", print_css)
+
     def test_share_root_preserves_download_through_redirect(self):
         self.create_share("root123", "rapport.html", b"rapport", "text/html")
 

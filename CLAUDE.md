@@ -28,6 +28,13 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   (`_ensure_column`), CRUD för services, reservations, shares
   (delningar; äger både rad och fil i `data/shares/<uid>/`) och themes
   (namngivna teman från tema-buildern; bara rad, ingen fil).
+- `app/ollama.py` - ollama-växlaren: vilken LLM-server projekten pratar med.
+  CRUD mot `ollama_endpoints`, seedning av tervo2, och `probe()` som frågar
+  en endpoint om den lever. Läsvägen (`get_active`) rör aldrig nätverket -
+  varje LLM-anrop i varje projekt passerar den. Här ligger också de
+  rådgivande anspråken (`gor_ansprak`/`las_ansprak`/`slapp_ansprak`), med
+  samma hållning som `arbetar`: de spärrar inget, de visar vem som kör och
+  hur länge, och de upphör av sig själva.
 - `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
   statusbedömning, reservationsstädning.
 - `app/ledger.py` - genererar och importerar
@@ -37,6 +44,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   rå text/css), start/stopp av portalinstallerade systemd-tjänster
   (/api/services/{name}/start|stop) och testsessioner (/api/test-sessions,
   /api/test/{slug}...).
+- `app/routes/ollama.py` - växlarens API (/api/ollama/...). Klientkontraktet
+  är `GET /active`, som svarar `{name, url}`. Hälsokollen ligger separat på
+  `/endpoints?probe=1` och körs parallellt så en nedsläckt maskin inte lägger
+  sin timeout ovanpå de andras.
 - `app/routes/pages.py` - kortvyn (/), tema-buildern (/tema),
   dokumentationsvyn (/docs/{name}), delningsservering
   (/share/{uid}/{filnamn}; .md renderas som läsvy) och testlistorna
@@ -182,6 +193,10 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   `.md` kan inte köra skript. Andra filtyper är oförändrade (även HTML-
   delningar serveras rakt av; deras highlighting är uppladdarens ansvar).
   Renderaren är generell (`render_text_page` för framtida `.txt`).
+  **Utskrift:** `@media print` i samma inline-CSS ger papperslayout oavsett
+  färgschema - verktygsraden döljs, vit bakgrund/svart text, ingen kortram,
+  full bredd, rubriker bryts inte från sitt stycke, kod/tabeller radbryts i
+  stället för att scrolla. Skärmvyn är orörd.
 - **Testlistor (`/test`).** Testpunkter betas av i ett UI i
   stället för punkt för punkt i chatten. Egna tabeller
   (`test_sessions`/`test_items` i `app/testruns.py`, inte `database.py` -
