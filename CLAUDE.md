@@ -28,26 +28,6 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   (`_ensure_column`), CRUD för services, reservations, shares
   (delningar; äger både rad och fil i `data/shares/<uid>/`) och themes
   (namngivna teman från tema-buildern; bara rad, ingen fil).
-- `app/ollama.py` - ollama-växlaren: vilken LLM-server projekten pratar med.
-  CRUD mot `ollama_endpoints`, seedning av tervo2, och `probe()` som frågar
-  en endpoint om den lever. Läsvägen (`get_active`) rör aldrig nätverket -
-  varje LLM-anrop i varje projekt passerar den. Här ligger också de
-  rådgivande anspråken (`gor_ansprak`/`las_ansprak`/`slapp_ansprak`), med
-  samma hållning som `arbetar`: de spärrar inget, de visar vem som kör och
-  hur länge, och de upphör av sig själva.
-- `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
-  statusbedömning, reservationsstädning.
-- `app/ledger.py` - genererar och importerar
-  `~/.claude/running-services.md`.
-- `app/routes/api.py` - JSON-API (/api/...), inkl. delnings-endpoints
-  (/api/shares), tema-endpoints (/api/themes; `.../tokens.css` serverar
-  rå text/css), start/stopp av portalinstallerade systemd-tjänster
-  (/api/services/{name}/start|stop) och testsessioner (/api/test-sessions,
-  /api/test/{slug}...).
-- `app/routes/ollama.py` - växlarens API (/api/ollama/...). Klientkontraktet
-  är `GET /active`, som svarar `{name, url}`. Hälsokollen ligger separat på
-  `/endpoints?probe=1` och körs parallellt så en nedsläckt maskin inte lägger
-  sin timeout ovanpå de andras.
 - `app/routes/pages.py` - kortvyn (/), tema-buildern (/tema),
   dokumentationsvyn (/docs/{name}), delningsservering
   (/share/{uid}/{filnamn}; .md renderas som läsvy) och testlistorna
