@@ -35,6 +35,20 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   rådgivande anspråken (`gor_ansprak`/`las_ansprak`/`slapp_ansprak`), med
   samma hållning som `arbetar`: de spärrar inget, de visar vem som kör och
   hur länge, och de upphör av sig själva.
+- `app/modelljobb.py` - förlopp, beräknad sluttid och previews för
+  körningar mot modeller (/modelljobb). Klienten skickar hela jobbets läge
+  som ögonblicksbild (`PUT /api/modelljobb/{uuid}`), och portalen flyttar
+  klientens tider med skillnaden mellan klockorna. Jobb mot en endpoint i
+  växlaren (namn eller URL) tar och förlänger dess anspråk vid varje
+  rapport och släpper det när jobbet blir klart, men bara om jobbet självt
+  tog det. Previews: löpande (12 per spår) och jämförelse (30 per spår, egen
+  kvot så de inte trängs undan). En preview har delarna indata och svar,
+  var och en med text och/eller bild, och svaret har formatet text eller
+  json. Så ryms bildtolkning, textjobb och bildgenerering i samma vy. Jobbet
+  kan bära en prompt, och ett spår kan ha en egen. Bilder bara JPEG/PNG/WebP enligt magiska
+  bytes, sparas i `data/modelljobb/<uuid>/`. Jobb tysta i 7 dagar städas.
+  Routes i `app/routes/modelljobb.py`, sidan i `modelljobb.html` +
+  `static/modelljobb.js`.
 - `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,
   statusbedömning, reservationsstädning.
 - `app/ledger.py` - genererar och importerar

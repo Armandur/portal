@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modelljobb - Portal</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/tokens.css">
+  <style>
+    .endpoint { margin: 0 0 1.25rem; padding: 1rem 1.15rem; }
+    .ep-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+    .ep-head h3 { margin: 0; font-size: 1.05rem; }
+    .ep-meta { font-size: .82rem; margin: .3rem 0 0; }
+    .jobb { border-top: 1px solid var(--pico-muted-border-color); margin-top: .9rem; padding-top: .8rem; }
+    .jobb-head { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; align-items: baseline; }
+    .jobb-head strong { font-size: .95rem; }
+    .jobb-sub { font-size: .78rem; }
+    .spar { display: grid; grid-template-columns: minmax(7rem, 9rem) 1fr; gap: .15rem .7rem;
+      align-items: center; margin: .45rem 0; font-size: .85rem; }
+    .spar-namn { font-family: var(--pico-font-family-monospace); font-size: .8rem; overflow-wrap: anywhere; }
+    .mj-bar { height: .55rem; border-radius: 99px; background: var(--pico-muted-border-color); overflow: hidden; }
+    .mj-bar > i { display: block; height: 100%; background: var(--pico-primary); transition: width .4s; }
+    .mj-bar.klar > i { background: var(--up); }
+    .mj-bar.okand > i { width: 30%; animation: glid 1.6s linear infinite; opacity: .6; }
+    @keyframes glid { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+    @media (prefers-reduced-motion: reduce) { .mj-bar.okand > i { animation: none; } }
+    .spar-info { grid-column: 2; font-size: .75rem; color: var(--pico-muted-color); }
+    .varning { color: var(--conflict); font-size: .8rem; margin: .3rem 0; }
+    .felrad { color: var(--down); font-size: .78rem; margin: .2rem 0; overflow-wrap: anywhere; }
+    .remsa { display: flex; gap: .5rem; overflow-x: auto; padding: .4rem 0 .2rem; scroll-snap-type: x mandatory; }
+    .prev { flex: 0 0 9.5rem; scroll-snap-align: start; border: 1px solid var(--pico-muted-border-color);
+      border-radius: 8px; padding: .35rem; cursor: pointer; background: var(--pico-card-background-color);
+      font-size: .72rem; line-height: 1.3; text-align: left; color: inherit; margin: 0; }
+    .prev.jamforbar { border-color: var(--docs); }
+    .prev .badge { font-size: .62rem; padding: .05rem .35rem; }
+    .prev:hover, .prev:focus-visible { border-color: var(--pico-primary); }
+    .prev img { width: 100%; height: 4.5rem; object-fit: cover; object-position: left top;
+      display: block; border-radius: 4px; margin-bottom: .25rem; background: #fff; }
+    .prev .txt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+      font-family: var(--pico-font-family-monospace); font-size: .68rem; overflow-wrap: anywhere; }
+    dialog article { max-width: 64rem; width: 100%; }
+    #mj-dlg-bild img, .jamfor img { max-width: 100%; height: auto; display: block; margin: 0 0 .75rem; background: #fff; }
+    #mj-dlg-bild pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; max-height: 12rem; overflow: auto; }
+    #mj-dlg-bild details { margin-bottom: .75rem; font-size: .85rem; }
+    .mj-del { font-size: .8rem; margin: 0 0 .3rem; color: var(--pico-muted-color); }
+    .jamfor details { font-size: .8rem; margin-top: .4rem; }
+    details.prompt { margin: .4rem 0; font-size: .85rem; }
+    details.prompt summary { font-size: .82rem; }
+    details.prompt pre, .jamfor details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem;
+      max-height: 14rem; overflow: auto; padding: .6rem; margin: .3rem 0; }
+    details.prompt h4 { font-size: .8rem; margin: .5rem 0 0; font-family: var(--pico-font-family-monospace); }
+    .jamfor { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; }
+    .jamfor pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem; margin: .3rem 0 0;
+      padding: .6rem; max-height: 18rem; overflow: auto; }
+    .jamfor h4 { font-size: .85rem; margin: 0; font-family: var(--pico-font-family-monospace); }
+    .avslutad { font-size: .85rem; margin: .4rem 0; }
+    @media (max-width: 480px) {
+      .spar { grid-template-columns: 1fr; }
+      .spar-info { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <hgroup>
+      <h1>Modelljobb</h1>
+      <p class="muted">Pågående körningar mot lokala och online-modeller. <a href="/">Till portalen</a></p>
+    </hgroup>
+  </header>
+  <main class="container">
+    <p id="mj-fel" class="notice error" hidden></p>
+    <section id="mj-lista" aria-live="polite"><p class="muted">Laddar jobb...</p></section>
+    <section>
+      <details>
+        <summary id="mj-avslutade-rubrik">Avslutade jobb</summary>
+        <div id="mj-avslutade"></div>
+      </details>
+    </section>
+    <footer>
+      <small class="muted">Jobben rapporterar med <code>PUT /api/modelljobb/{uuid}</code> och
+        <code>POST /api/modelljobb/{uuid}/preview</code>. Se <a href="/api/docs">API-dokumentationen</a>.</small>
+    </footer>
+  </main>
+
+  <!-- Utanför listan med flit: listan byts ut var 5:e sekund och skulle annars
+       stänga en öppen jämförelse. -->
+  <dialog id="mj-dlg">
+    <article>
+      <header>
+        <button aria-label="Stäng" rel="prev" id="mj-stang"></button>
+        <strong id="mj-dlg-titel"></strong>
+      </header>
+      <div id="mj-dlg-bild"></div>
+      <div class="jamfor" id="mj-dlg-jamfor"></div>
+    </article>
+  </dialog>
+
+  <script src="/static/utils.js"></script>
+  <script src="/static/modelljobb.js"></script>
+</body>
+</html>

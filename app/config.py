@@ -56,3 +56,8 @@ LOG_TAIL_LINES = int(os.environ.get("PORTAL_LOG_TAIL_LINES", "200"))
 # Default-range för lediga portar
 PORT_RANGE_START = 8000
 PORT_RANGE_END = 8999
+
+# Modelljobb: previewbilder lagras här, och jobb som inte hörts av på så här
+# många dagar städas bort med sina previews.
+MODELLJOBB_DIR = Path(os.environ.get("PORTAL_MODELLJOBB_DIR", BASE_DIR / "data" / "modelljobb"))
+MODELLJOBB_TTL_DAGAR = int(os.environ.get("PORTAL_MODELLJOBB_TTL_DAGAR", "7"))

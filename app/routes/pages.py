@@ -33,6 +33,11 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {})
 
 
+@router.get("/modelljobb", response_class=HTMLResponse)
+def modelljobb_sida(request: Request):
+    return templates.TemplateResponse(request, "modelljobb.html", {})
+
+
 @router.get("/tema", response_class=HTMLResponse)
 def tema(request: Request):
     return templates.TemplateResponse(request, "tema.html", {})
