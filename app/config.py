@@ -61,3 +61,6 @@ PORT_RANGE_END = 8999
 # många dagar städas bort med sina previews.
 MODELLJOBB_DIR = Path(os.environ.get("PORTAL_MODELLJOBB_DIR", BASE_DIR / "data" / "modelljobb"))
 MODELLJOBB_TTL_DAGAR = int(os.environ.get("PORTAL_MODELLJOBB_TTL_DAGAR", "7"))
+
+# Modelljobb som pågått kortare än så här många minuter ger inga ntfy-notiser.
+MODELLJOBB_NOTIS_EFTER_MIN = float(os.environ.get("PORTAL_MODELLJOBB_NOTIS_EFTER_MIN", "2"))

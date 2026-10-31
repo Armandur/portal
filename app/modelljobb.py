@@ -17,8 +17,8 @@ import shutil
 import sqlite3
 import time
 
-from app import config, ollama
-from app.database import get_conn
+from app import config, modelljobb_notis, ollama
+from app.database import _ensure_column, get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS modelljobb (
     aktuell TEXT,
     tog_ansprak INTEGER NOT NULL DEFAULT 0,
     ansprak_konflikt TEXT,
-    prompt TEXT
+    prompt TEXT,
+    notis INTEGER NOT NULL DEFAULT 1,
+    notis_lage TEXT
 );
 
 CREATE TABLE IF NOT EXISTS modelljobb_preview (
@@ -103,6 +105,9 @@ def init_schema() -> None:
     conn = get_conn()
     try:
         conn.executescript(_SCHEMA)
+        # Kolumner som kom till efter första versionen.
+        _ensure_column(conn, "modelljobb", "notis", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "modelljobb", "notis_lage", "TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -193,8 +198,8 @@ def spara(uuid: str, data: dict) -> dict:
         conn.execute(
             """INSERT INTO modelljobb (uuid, beskrivning, projekt, agare, endpoint, host,
                    pid, version, start, senast, klar, spar, fel, aktuell, tog_ansprak,
-                   ansprak_konflikt, prompt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ansprak_konflikt, prompt, notis)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(uuid) DO UPDATE SET
                    beskrivning = excluded.beskrivning, projekt = excluded.projekt,
                    agare = excluded.agare, endpoint = excluded.endpoint,
@@ -203,17 +208,19 @@ def spara(uuid: str, data: dict) -> dict:
                    spar = excluded.spar, fel = excluded.fel, aktuell = excluded.aktuell,
                    tog_ansprak = excluded.tog_ansprak,
                    ansprak_konflikt = excluded.ansprak_konflikt,
-                   prompt = excluded.prompt""",
+                   prompt = excluded.prompt, notis = excluded.notis""",
             (
                 uuid, data["beskrivning"], data.get("projekt"), data.get("agare"),
                 data.get("endpoint"), data.get("host"), data.get("pid"), data.get("version"),
                 start, nu, int(data["klar"]), json.dumps(spar, ensure_ascii=False),
                 json.dumps(fel, ensure_ascii=False),
                 json.dumps(data.get("aktuell"), ensure_ascii=False) if data.get("aktuell") else None,
-                int(tog), konflikt, data.get("prompt"),
+                int(tog), konflikt, data.get("prompt"), int(data.get("notis", True)),
             ),
         )
-    return hamta(uuid)
+    jobb = hamta(uuid)
+    modelljobb_notis.efter_rapport(jobb, var_klar=bool(tidigare and tidigare["klar"]))
+    return jobb
 
 
 def _berakna_spar(s: dict, nu: float) -> dict:
@@ -303,6 +310,8 @@ def _berakna(row: sqlite3.Row, conn: sqlite3.Connection, nu: float) -> dict:
         "tog_ansprak": bool(row["tog_ansprak"]),
         "ansprak_konflikt": row["ansprak_konflikt"],
         "prompt": row["prompt"],
+        "notis": bool(row["notis"]),
+        "notis_lage": row["notis_lage"],
         "previews": _previews(conn, row["uuid"]),
     }
 

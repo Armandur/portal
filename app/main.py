@@ -14,7 +14,7 @@ from app.database import clean_expired_shares, init_db, upsert_service
 from app.ledger import import_ledger, write_ledger
 from app.ports import clean_dead_ephemeral_services
 from app.routes import api, modelljobb as modelljobb_routes, ollama as ollama_routes, pages
-from app import modelljobb, ollama, testruns
+from app import modelljobb, modelljobb_notis, ollama, testruns
 
 
 def _register_self() -> None:
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
     write_ledger()
     clean_expired_shares()
     modelljobb.stada()
+    modelljobb_notis.starta_vakt()
     yield
 
 

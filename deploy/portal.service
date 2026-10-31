@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/rasmus/workspace/portal
+# ntfy-token för modelljobbens notiser. Ligger utanför repot, chmod 600.
+EnvironmentFile=-%h/.config/portal/ntfy.env
 ExecStart=/home/rasmus/workspace/portal/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8890
 Restart=on-failure
 RestartSec=3

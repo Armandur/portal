@@ -47,6 +47,12 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   json. Så ryms bildtolkning, textjobb och bildgenerering i samma vy. Jobbet
   kan bära en prompt, och ett spår kan ha en egen. Bilder bara JPEG/PNG/WebP enligt magiska
   bytes, sparas i `data/modelljobb/<uuid>/`. Jobb tysta i 7 dagar städas.
+  `app/modelljobb_notis.py` skickar ntfy-notis (topic `svc_modelljobb`)
+  när ett jobb som pågått längre än `PORTAL_MODELLJOBB_NOTIS_EFTER_MIN`
+  (2 min) blir klart, avbryts, tystnar eller överges, en gång per
+  övergång (`notis_lage` i jobbraden). Tyst och övergivet hittas av en
+  vakttråd som går varje minut. Token läses från `~/.config/portal/ntfy.env`
+  via `EnvironmentFile` i unit-filen. Saknas den skickas inga notiser.
   Routes i `app/routes/modelljobb.py`, sidan i `modelljobb.html` +
   `static/modelljobb.js`.
 - `app/ports.py` - `ss -tlnp`-skanning (subprocess), ledig-port-logik,

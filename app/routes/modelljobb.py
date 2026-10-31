@@ -51,6 +51,8 @@ class JobbIn(BaseModel):
     start: float | None = None
     skickad: float | None = None
     klar: bool = False
+    # False stänger av ntfy-notiserna för just det här jobbet.
+    notis: bool = True
     prompt: str | None = Field(None, max_length=modelljobb.PROMPT_MAX)
     spar: list[SparIn] = Field(default_factory=list, max_length=20)
     fel: list[FelIn] = Field(default_factory=list, max_length=50)
