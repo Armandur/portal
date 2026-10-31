@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS modelljobb_preview (
 CREATE INDEX IF NOT EXISTS modelljobb_preview_jobb ON modelljobb_preview (jobb, spar);
 """
 
+# Klientmodulen som projekten hämtar via /api/modelljobb/klient.py.
+KLIENT = config.BASE_DIR / "cli" / "modelljobb.py"
+
 # Hur länge ett anspråk räcker per rapport. Nästa rapport förlänger det, och
 # ett kraschat jobb släpper det av sig själv.
 ANSPRAK_MINUTER = 30

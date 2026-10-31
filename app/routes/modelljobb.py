@@ -10,7 +10,7 @@ import binascii
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app import modelljobb
@@ -74,6 +74,14 @@ class PreviewIn(BaseModel):
 @router.get("")
 def lista():
     return modelljobb.lista()
+
+
+@router.get("/klient.py", response_class=PlainTextResponse)
+def klient():
+    """Klientmodulen, att hämta in i ett projekt med curl."""
+    return PlainTextResponse(
+        modelljobb.KLIENT.read_text(encoding="utf-8"), media_type="text/x-python; charset=utf-8"
+    )
 
 
 @router.put("/{uuid}")

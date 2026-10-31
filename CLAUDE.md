@@ -96,6 +96,9 @@ portar/tjänster som körs. Kör själv på port 8890 (host 0.0.0.0).
   (UI/preview/export/URL-state/iro-hjul), builder.css. `vendor/coloris/` -
   self-hostad Coloris-väljare, `vendor/iro/` - self-hostad iro.js (MPL-2.0)
   för färghjulet.
+- `cli/modelljobb.py` - klienten för modelljobb (stdlib, Pillow om den
+  finns). Projekten hämtar den via `GET /api/modelljobb/klient.py` och
+  committar den själva. Höj `VERSION` vid ändringar i kontraktet.
 - `cli/svc` - stdlib-only CLI mot API:t (fungerar utan venv). Utöver
   register/port/list även share/unshare/shares för fildelning,
   `install` (skriver systemd user-unit lokalt) och `test-session`
