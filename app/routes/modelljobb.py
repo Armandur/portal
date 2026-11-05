@@ -27,6 +27,12 @@ class SparIn(BaseModel):
     slut: float | None = None
     # Spårets egen prompt, när den skiljer sig från jobbets.
     prompt: str | None = Field(None, max_length=modelljobb.PROMPT_MAX)
+    # Klient VERSION 2: pågående anrop och summerade siffror från modellen.
+    anrop_start: float | None = None
+    anrop_rubrik: str | None = Field(None, max_length=200)
+    tokens: int | None = Field(None, ge=0)
+    eval_s: float | None = Field(None, ge=0)
+    avklippta: int = Field(0, ge=0)
 
 
 class FelIn(BaseModel):
@@ -64,6 +70,14 @@ class DelIn(BaseModel):
     bild_base64: str | None = Field(None, max_length=280_000)
 
 
+class MetaIn(BaseModel):
+    """Modellens egna siffror för ett svar, t.ex. ur ollamas /api/chat."""
+    tokens: int | None = Field(None, ge=0)
+    tok_per_s: float | None = Field(None, ge=0)
+    total_s: float | None = Field(None, ge=0)
+    done_reason: str | None = Field(None, max_length=40)
+
+
 class PreviewIn(BaseModel):
     spar: str = Field(min_length=1, max_length=120)
     rubrik: str = Field(min_length=1, max_length=200)
@@ -71,6 +85,7 @@ class PreviewIn(BaseModel):
     svar: DelIn | None = None
     format: Literal["text", "json"] = "text"
     jamfor: bool = False
+    meta: MetaIn | None = None
 
 
 @router.get("")
@@ -131,7 +146,8 @@ def lagg_till_preview(uuid: str, payload: PreviewIn):
         delar[namn] = {"text": del_.text, "bild": bild}
     try:
         return modelljobb.lagg_till_preview(
-            uuid, payload.spar, payload.rubrik, delar, payload.format, payload.jamfor
+            uuid, payload.spar, payload.rubrik, delar, payload.format, payload.jamfor,
+            payload.meta.model_dump(exclude_none=True) if payload.meta else None,
         )
     except modelljobb.JobbFel as exc:
         raise HTTPException(400, str(exc)) from exc

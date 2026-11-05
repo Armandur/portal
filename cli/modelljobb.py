@@ -17,6 +17,11 @@ om den finns, för att skala ner bilder):
                 jobb.preview(modell, fil.name, svar=svar, indata_bild=fil, format="json")
             jobb.modell_klar(modell)
 
+Före varje modellanrop: `jobb.anrop_borjar(modell, rubrik)`. Då visar sidan hur
+länge anropet väntat, och ett anrop som fastnat syns direkt. Skicka modellens
+svar till `klar_med(..., svar_meta=r.json())` och `preview(..., svar_meta=...)`,
+så visar sidan token per sekund och markerar avklippta svar.
+
 Metoderna har samma namn som `Status` i kyrkohandbokens storstil_status.py,
 men konstruktorn tar beskrivningen först och skriver ingen lokal fil.
 Klienten fäller aldrig jobbet: svarar inte portalen loggar den en gång och kör
@@ -29,6 +34,7 @@ import json
 import logging
 import os
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -36,7 +42,7 @@ import uuid
 import zlib
 from pathlib import Path
 
-VERSION = "1"
+VERSION = "2"
 PORTAL = os.environ.get("PORTAL_URL", "http://ubuntu-ai:8890").rstrip("/")
 TIMEOUT = 2.0
 BILD_MAX_BYTES = 200 * 1024
@@ -92,34 +98,69 @@ class Jobb:
         self._senast_skickat = 0.0
         self._senast_preview: dict[str, float] = {}
         self._portal_nere = False
+        # Skriptet står ofta still i ett modellanrop. En timer skickar då det
+        # strypningen sköt upp, så ett anrop som fastnat ändå syns i portalen.
+        self._las = threading.RLock()
+        self._timer: threading.Timer | None = None
         self._skicka(tvinga=True)
 
     # -- Samma gränssnitt som storstil_status.Status -------------------------
 
+    # Varje ändring av self.data sker under låset, så timerns tråd aldrig
+    # serialiserar en dict mitt i en ändring.
+
     def borjar(self, modell: str, redan_klara: int = 0) -> None:
-        s = self._spar(modell)
-        s["start"], s["klara"], s["fran"] = time.time(), redan_klara, redan_klara
+        with self._las:
+            s = self._spar(modell)
+            s["start"], s["klara"], s["fran"] = time.time(), redan_klara, redan_klara
         self._skicka(tvinga=True)
 
-    def klar_med(self, modell: str, rubrik: str | None = None) -> None:
-        s = self._spar(modell)
-        s["klara"] += 1
-        if s.get("start") is None:
-            s["start"] = time.time()
-        self.data["aktuell"] = {"modell": modell, "rubrik": rubrik}
+    def klar_med(self, modell: str, rubrik: str | None = None, svar_meta: dict | None = None) -> None:
+        """Ett svar till. `svar_meta` är modellens svar som dict, t.ex. ollamas /api/chat."""
+        with self._las:
+            s = self._spar(modell)
+            s["klara"] += 1
+            if s.get("start") is None:
+                s["start"] = time.time()
+            s["anrop_start"] = s["anrop_rubrik"] = None
+            self.data["aktuell"] = {"modell": modell, "rubrik": rubrik}
+            meta = _meta(svar_meta)
+            if meta.get("tokens") and meta.get("_eval_s"):
+                s["tokens"] = (s.get("tokens") or 0) + meta["tokens"]
+                s["eval_s"] = round((s.get("eval_s") or 0) + meta["_eval_s"], 3)
+            avklippt = meta.get("done_reason") in AVKLIPPT
+            if avklippt:
+                s["avklippta"] = s.get("avklippta", 0) + 1
+        self._skicka(tvinga=avklippt)
+
+    def anrop_borjar(self, modell: str, rubrik: str | None = None) -> None:
+        """Ett anrop till modellen har skickats och väntar på svar."""
+        with self._las:
+            s = self._spar(modell)
+            s["anrop_start"], s["anrop_rubrik"] = time.time(), rubrik
         self._skicka()
 
     def fel(self, modell: str, text: str) -> None:
-        self.data["fel"] = (self.data["fel"] + [{"tid": time.time(), "modell": modell,
-                                                  "text": str(text)[:300]}])[-20:]
+        with self._las:
+            self._spar(modell)["anrop_start"] = None
+            self.data["fel"] = (self.data["fel"] + [{"tid": time.time(), "modell": modell,
+                                                      "text": str(text)[:300]}])[-20:]
         self._skicka(tvinga=True)
 
     def modell_klar(self, modell: str) -> None:
-        self._spar(modell)["slut"] = time.time()
+        with self._las:
+            s = self._spar(modell)
+            s["slut"], s["anrop_start"] = time.time(), None
         self._skicka(tvinga=True)
 
     def avsluta(self) -> None:
-        self.data["klar"], self.data["aktuell"] = True, None
+        with self._las:
+            self.data["klar"], self.data["aktuell"] = True, None
+            for s in self.data["spar"]:
+                s["anrop_start"] = None
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
         self._skicka(tvinga=True)
 
     # -- Previews ------------------------------------------------------------
@@ -133,7 +174,8 @@ class Jobb:
 
     def preview(self, modell: str, rubrik: str, *, svar: str | None = None,
                 indata: str | None = None, svar_bild=None, indata_bild=None,
-                format: str = "text", jamfor: bool | None = None) -> bool:
+                format: str = "text", jamfor: bool | None = None,
+                svar_meta: dict | None = None) -> bool:
         """Skickar ett svar att visa. Bilder är bytes eller en sökväg.
 
         Löpande previews stryps per spår. Jämförelsepreviews skickas alltid.
@@ -145,7 +187,9 @@ class Jobb:
         if not jamfor and nu - self._senast_preview.get(modell, 0) < self.preview_strypning:
             return False
         self._senast_preview[modell] = nu
+        meta = {k: v for k, v in _meta(svar_meta).items() if not k.startswith("_")}
         kropp = {"spar": modell, "rubrik": rubrik, "format": format, "jamfor": jamfor,
+                 "meta": meta or None,
                  "indata": {"text": indata, "bild_base64": _bild(indata_bild)},
                  "svar": {"text": svar, "bild_base64": _bild(svar_bild)}}
         return self._http("POST", f"/api/modelljobb/{self.uuid}/preview", kropp) is not None
@@ -175,11 +219,23 @@ class Jobb:
         return s
 
     def _skicka(self, tvinga: bool = False) -> None:
-        nu = time.time()
-        if not tvinga and nu - self._senast_skickat < self.strypning:
-            return
-        self._senast_skickat = nu
-        self._http("PUT", f"/api/modelljobb/{self.uuid}", {**self.data, "skickad": nu})
+        with self._las:
+            nu = time.time()
+            kvar = self.strypning - (nu - self._senast_skickat)
+            if not tvinga and kvar > 0:
+                if self._timer is None and not self.data["klar"]:
+                    self._timer = threading.Timer(kvar, self._efterslap)
+                    self._timer.daemon = True
+                    self._timer.start()
+                return
+            self._senast_skickat = nu
+            kropp = json.loads(json.dumps({**self.data, "skickad": nu}))
+        self._http("PUT", f"/api/modelljobb/{self.uuid}", kropp)
+
+    def _efterslap(self) -> None:
+        with self._las:
+            self._timer = None
+        self._skicka(tvinga=True)
 
     def _http(self, metod: str, vag: str, kropp: dict) -> dict | None:
         req = urllib.request.Request(
@@ -203,6 +259,31 @@ class Jobb:
             logger.warning("Portalen svarar igen.")
             self._portal_nere = False
         return svar
+
+
+AVKLIPPT = ("length", "max_tokens")
+
+
+def _meta(svar: dict | None) -> dict:
+    """Siffror ur ett modellsvar. Förstår ollamas /api/chat och Anthropics Messages.
+
+    `_eval_s` är genereringstiden, som klienten summerar per spår. Den
+    skickas inte med previews.
+    """
+    if not isinstance(svar, dict):
+        return {}
+    if "eval_count" in svar or "done_reason" in svar:
+        tokens, eval_ns = svar.get("eval_count"), svar.get("eval_duration")
+        total_ns = svar.get("total_duration")
+        meta = {"tokens": tokens, "done_reason": svar.get("done_reason"),
+                "total_s": round(total_ns / 1e9, 1) if total_ns else None,
+                "_eval_s": eval_ns / 1e9 if eval_ns else None}
+        if tokens and eval_ns:
+            meta["tok_per_s"] = round(tokens / (eval_ns / 1e9), 1)
+        return {k: v for k, v in meta.items() if v is not None}
+    usage = svar.get("usage") or {}
+    meta = {"tokens": usage.get("output_tokens"), "done_reason": svar.get("stop_reason")}
+    return {k: v for k, v in meta.items() if v is not None}
 
 
 def _bild(bild) -> str | None:

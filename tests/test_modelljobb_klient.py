@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -157,6 +158,41 @@ class KlientTest(unittest.TestCase):
         data = self._las(jobb)
         self.assertEqual(data["prompt"], "Läs ackorden.")
         self.assertEqual([s.get("prompt") for s in data["spar"]], [None, "Läs ackorden kort."])
+
+    def test_fastnat_anrop_syns_fast_skriptet_star_still(self):
+        # anrop_borjar stryps, och sedan står skriptet i anropet. Utan timern
+        # kom ingen mer rapport, och portalen visste inte om anropet.
+        jobb = self._jobb(strypning=0.3)
+        jobb.borjar("a")
+        jobb.anrop_borjar("a", "ps_7.jpg")
+        self.assertIsNone(self._las(jobb)["spar"][0]["vantar_sekunder"])
+        time.sleep(0.6)  # skriptet väntar på modellen
+        s = self._las(jobb)["spar"][0]
+        self.assertEqual(s["anrop_rubrik"], "ps_7.jpg")
+        self.assertIsNotNone(s["vantar_sekunder"])
+        jobb.avsluta()
+
+    def test_ollamas_siffror_summeras_och_avklippt_skickas_direkt(self):
+        jobb = self._jobb(strypning=60)
+        jobb.borjar("a")
+        svar = {"eval_count": 300, "eval_duration": 10_000_000_000, "total_duration": 12_000_000_000,
+                "done_reason": "stop"}
+        jobb.klar_med("a", "ps_1.jpg", svar_meta=svar)
+        jobb.klar_med("a", "ps_2.jpg", svar_meta={**svar, "done_reason": "length"})
+        s = self._las(jobb)["spar"][0]
+        self.assertEqual(s["klara"], 2)  # avklippt tvingade fram rapporten trots strypningen
+        self.assertEqual(s["tokens"], 600)
+        self.assertEqual(s["tok_per_s"], 30.0)
+        self.assertEqual(s["avklippta"], 1)
+        self.assertIsNone(s["vantar_sekunder"])
+        jobb.preview("a", "ps_2.jpg", svar="...", svar_meta={**svar, "done_reason": "length"}, jamfor=True)
+        meta = self._las(jobb)["previews"][0]["meta"]
+        self.assertEqual(meta, {"tokens": 300, "tok_per_s": 30.0, "total_s": 12.0, "done_reason": "length"})
+
+    def test_anthropics_svar_forstas(self):
+        meta = klient._meta({"usage": {"output_tokens": 512}, "stop_reason": "max_tokens"})
+        self.assertEqual(meta, {"tokens": 512, "done_reason": "max_tokens"})
+        self.assertIn(meta["done_reason"], klient.AVKLIPPT)
 
     def test_portalen_serverar_klienten(self):
         svar = self.client.get("/api/modelljobb/klient.py")

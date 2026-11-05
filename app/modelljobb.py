@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS modelljobb_preview (
     svar_text TEXT,
     svar_bild TEXT,
     jamfor INTEGER NOT NULL DEFAULT 0,
+    meta TEXT,
     skapad REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS modelljobb_preview_jobb ON modelljobb_preview (jobb, spar);
@@ -90,6 +91,7 @@ BILD_MAX_BYTES = 200 * 1024
 OVERGIVET_SEKUNDER = 6 * 3600
 
 TYST_MIN = 120
+ANROP_FASTNAT_MIN = 60
 
 _BILDTYPER = (
     (b"\xff\xd8\xff", "image/jpeg", "jpg"),
@@ -108,6 +110,7 @@ def init_schema() -> None:
         # Kolumner som kom till efter första versionen.
         _ensure_column(conn, "modelljobb", "notis", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "modelljobb", "notis_lage", "TEXT")
+        _ensure_column(conn, "modelljobb_preview", "meta", "TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -188,7 +191,8 @@ def spara(uuid: str, data: dict) -> dict:
 
     spar = []
     for s in data["spar"]:
-        spar.append({**s, "start": flytta(s.get("start")), "slut": flytta(s.get("slut"))})
+        spar.append({**s, "start": flytta(s.get("start")), "slut": flytta(s.get("slut")),
+                     "anrop_start": flytta(s.get("anrop_start"))})
     fel = [{**f, "tid": flytta(f.get("tid")) or nu} for f in data["fel"][-20:]]
 
     with get_conn() as conn:
@@ -234,12 +238,21 @@ def _berakna_spar(s: dict, nu: float) -> dict:
     if per_enhet and totalt is not None and not slut:
         kvar = round(max(0, totalt - klara) * per_enhet)
     lage = "klar" if slut else "pågår" if start else "väntar"
+
+    # Ett anrop som väntat mycket längre än spårets takt har troligen fastnat,
+    # t.ex. i en upprepning som aldrig når ett stopptecken.
+    anrop_start = s.get("anrop_start")
+    vantar = round(nu - anrop_start) if anrop_start and not slut else None
+    fastnat = vantar is not None and vantar > max(ANROP_FASTNAT_MIN, 5 * (per_enhet or 0))
+    tokens, eval_s = s.get("tokens"), s.get("eval_s")
+    tok_per_s = round(tokens / eval_s, 1) if tokens and eval_s else None
     procent = None
     if totalt:
         procent = min(100, round(100 * klara / totalt))
     elif totalt == 0:
         procent = 100
-    return {**s, "procent": procent, "per_enhet": per_enhet, "kvar_sekunder": kvar, "lage": lage}
+    return {**s, "procent": procent, "per_enhet": per_enhet, "kvar_sekunder": kvar, "lage": lage,
+            "vantar_sekunder": vantar, "fastnat": fastnat, "tok_per_s": tok_per_s}
 
 
 def _previews(conn: sqlite3.Connection, uuid: str) -> list[dict]:
@@ -259,6 +272,7 @@ def _previews(conn: sqlite3.Connection, uuid: str) -> list[dict]:
             "rubrik": r["rubrik"],
             "format": r["format"],
             "jamfor": bool(r["jamfor"]),
+            "meta": json.loads(r["meta"]) if r["meta"] else None,
             "skapad": r["skapad"],
             **{d: {"text": r[f"{d}_text"], "bild": bild(r, d)} for d in DELAR},
         }
@@ -368,7 +382,7 @@ def _bildtyp(data: bytes) -> tuple[str, str]:
 
 
 def lagg_till_preview(uuid: str, spar: str, rubrik: str, delar: dict,
-                      format: str = "text", jamfor: bool = False) -> dict:
+                      format: str = "text", jamfor: bool = False, meta: dict | None = None) -> dict:
     """`delar` är {"indata"|"svar": {"text": str|None, "bild": bytes|None}}."""
     validera_uuid(uuid)
     if format not in FORMAT:
@@ -387,8 +401,9 @@ def lagg_till_preview(uuid: str, spar: str, rubrik: str, delar: dict,
             raise LookupError(uuid)
         cur = conn.execute(
             "INSERT INTO modelljobb_preview (jobb, spar, rubrik, format, indata_text, svar_text,"
-            " jamfor, skapad) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (uuid, spar, rubrik, format, *texter, int(jamfor), time.time()),
+            " jamfor, meta, skapad) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (uuid, spar, rubrik, format, *texter, int(jamfor),
+             json.dumps(meta, ensure_ascii=False) if meta else None, time.time()),
         )
         pid = cur.lastrowid
         for del_, (bild, andelse) in bilder.items():

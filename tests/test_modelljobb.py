@@ -238,6 +238,39 @@ class ModelljobbRouteTest(unittest.TestCase):
         self.assertEqual(lista["pagaende"], [])
         self.assertTrue(lista["avslutade"][0]["overgivet"])
 
+    def test_anrop_som_vantat_lange_markeras_som_fastnat(self):
+        # Klientens klocka går en timme fel. Utan skiftet på anrop_start blev
+        # väntetiden negativ eller en timme, inte 100 s.
+        fel_klocka = time.time() + 3600
+        j = self._put(skickad=fel_klocka, spar=[{
+            "modell": "qwen3.5:9b", "klara": 10, "totalt": 100, "start": fel_klocka - 20,
+            "anrop_start": fel_klocka - 100, "anrop_rubrik": "ps_7.jpg",
+            "tokens": 3000, "eval_s": 100.0, "avklippta": 2}])
+        s = j["spar"][0]
+        self.assertAlmostEqual(s["vantar_sekunder"], 100, delta=2)
+        self.assertTrue(s["fastnat"])
+        self.assertEqual(s["tok_per_s"], 30.0)
+        self.assertEqual(s["avklippta"], 2)
+
+    def test_kort_vantan_ar_inte_fastnat(self):
+        nu = time.time()
+        j = self._put(skickad=nu, spar=[{"modell": "a", "klara": 10, "totalt": 100,
+                                         "start": nu - 100, "anrop_start": nu - 20}])
+        self.assertFalse(j["spar"][0]["fastnat"])
+
+    def test_klient_version_1_saknar_nya_falt(self):
+        j = self._put()
+        self.assertIsNone(j["spar"][0]["vantar_sekunder"])
+        self.assertIsNone(j["spar"][0]["tok_per_s"])
+
+    def test_preview_bar_modellens_siffror(self):
+        self._put()
+        self.client.post("/api/modelljobb/jobb-0001/preview", json={
+            "spar": "a", "rubrik": "ps_1.jpg", "svar": {"text": "..."},
+            "meta": {"tokens": 4096, "tok_per_s": 31.5, "done_reason": "length"}})
+        p = self.client.get("/api/modelljobb/jobb-0001").json()["previews"][0]
+        self.assertEqual(p["meta"], {"tokens": 4096, "tok_per_s": 31.5, "done_reason": "length"})
+
     def test_ogiltigt_uuid_avvisas(self):
         svar = self.client.put("/api/modelljobb/kort", json=_jobb())
         self.assertEqual(svar.status_code, 400)
