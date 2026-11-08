@@ -97,6 +97,9 @@ function renderServiceRow(svc, showLabel) {
       ${head}
       <div class="card-links">
         <a href="${escapeHtml(svc.url)}">${escapeHtml(svc.url)}</a>
+        ${(svc.extra_links || [])
+          .map((link) => `<a href="${escapeHtml(link.url)}">${escapeHtml(link.label)}</a>`)
+          .join("")}
         ${docsLink}
       </div>
       ${renderServiceControl(svc)}

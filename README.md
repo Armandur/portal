@@ -96,8 +96,10 @@ svc ports
 
 Gemensamma fält på `register` och `update`: `--pid`, `--desc`, `--docs-file`,
 `--docs-md`, `--log-file`, `--kind` (`ephemeral`, `systemd`, `docker`),
-`--unit`, `--backlog-project` (när projektet heter något annat i backlog) och
-`--autostart/--no-autostart`.
+`--unit`, `--backlog-project` (när projektet heter något annat i backlog),
+`--link ETIKETT=/sökväg` (extra länk på kortet, på tjänstens egen port,
+upprepbar och ersätter tidigare länkar) och `--autostart/--no-autostart`.
+`update` tar också `--clear-links`.
 
 Efemära poster (default-typen) städas automatiskt bort när varken porten
 lyssnar eller PID:en lever - en dev-server som dött lämnar ingen skräprad.

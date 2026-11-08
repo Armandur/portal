@@ -43,5 +43,29 @@ class ServiceApiTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 400)
 
 
+    def test_extra_links_render_on_the_service_port_and_can_be_cleared(self):
+        body = api.ServiceIn(
+            name="pixel-agents",
+            project="pixel-agents",
+            port=8028,
+            extra_links=[{"label": "Med token", "url_path": "/?token=abc"}],
+        )
+        with (
+            patch.object(api, "write_ledger"),
+            patch.object(api, "scan_listening_ports", return_value={}),
+        ):
+            created = api.create_service(body)
+            self.assertEqual(
+                created["extra_links"],
+                [{"label": "Med token", "url": f"http://{api.SERVICE_HOST}:8028/?token=abc"}],
+            )
+            cleared = api.update_service("pixel-agents", api.ServicePatch(extra_links=[]))
+        self.assertEqual(cleared["extra_links"], [])
+
+    def test_extra_link_path_must_start_with_slash(self):
+        with self.assertRaises(ValueError):
+            api.ExtraLink(label="x", url_path="http://elsewhere/")
+
+
 if __name__ == "__main__":
     unittest.main()

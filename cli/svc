@@ -124,7 +124,23 @@ def _service_body(args):
         body["autostart"] = args.autostart
     if getattr(args, "backlog_project", None) is not None:
         body["backlog_project"] = args.backlog_project
+    if getattr(args, "clear_links", False):
+        body["extra_links"] = []
+    if getattr(args, "link", None):
+        body["extra_links"] = [_parse_link(spec) for spec in args.link]
     return body
+
+
+def _parse_link(spec):
+    """'Med token=/?token=abc' -> {label, url_path}. Sökvägen gäller
+    tjänstens egen port och måste börja med /."""
+    label, sep, path = spec.partition("=")
+    if not sep or not label.strip() or not path.startswith("/"):
+        print(
+            f"Fel: --link vill ha ETIKETT=/sökväg, fick '{spec}'.", file=sys.stderr
+        )
+        sys.exit(1)
+    return {"label": label.strip(), "url_path": path}
 
 
 def cmd_register(args):
@@ -354,6 +370,13 @@ def _add_common_fields(p):
     )
     p.add_argument("--unit", help="Systemd-unit eller containernamn")
     p.add_argument(
+        "--link",
+        action="append",
+        metavar="ETIKETT=/SÖKVÄG",
+        help="Extra länk på kortet, på tjänstens egen port (upprepbar). "
+             "Ersätter tidigare extra länkar.",
+    )
+    p.add_argument(
         "--backlog-project",
         help="Projektnamnet i backlog, om det skiljer sig från portalens "
              "(t.ex. anmalningssystem i portalen, hemslojd i backlog). "
@@ -530,6 +553,9 @@ def main():
     p.add_argument("--project", help="Projektnamn")
     p.add_argument("--path", help="URL-sökväg")
     p.add_argument("--by", help="Vem som startade")
+    p.add_argument(
+        "--clear-links", action="store_true", help="Ta bort kortets extra länkar"
+    )
     _add_common_fields(p)
     p.set_defaults(func=cmd_update)
 

@@ -36,6 +36,23 @@ from app.ports import (
 router = APIRouter(prefix="/api")
 
 
+class ExtraLink(BaseModel):
+    """En extra länk på kortet, på tjänstens egen port (t.ex. en adminvy
+    eller en adress med token)."""
+
+    label: str = Field(min_length=1, max_length=40)
+    url_path: str = Field(pattern=r"^/")
+
+
+def _links_json(links: list | None) -> str | None:
+    if links is None:
+        return None
+    return json.dumps(
+        [{"label": link["label"], "url_path": link["url_path"]} for link in links],
+        ensure_ascii=False,
+    )
+
+
 class ServiceIn(BaseModel):
     name: str
     project: str
@@ -53,6 +70,7 @@ class ServiceIn(BaseModel):
     # Backlog-projektet kan heta något annat än portalens projektnamn. Sätts
     # när de skiljer sig, så todos och testlistor hittar rätt kort.
     backlog_project: str | None = None
+    extra_links: list[ExtraLink] = []
 
 
 class ServicePatch(BaseModel):
@@ -69,6 +87,8 @@ class ServicePatch(BaseModel):
     autostart: bool | None = None
     log_path: str | None = None
     backlog_project: str | None = None
+    # En tom lista tar bort alla extra länkar
+    extra_links: list[ExtraLink] | None = None
 
 
 class ReserveIn(BaseModel):
@@ -116,6 +136,15 @@ def _with_status(
         out["url"] = f"http://{SERVICE_HOST}:{PORTAL_PORT}/docs/{svc['name']}"
     else:
         out["url"] = f"http://{SERVICE_HOST}:{svc['port']}{svc.get('url_path') or '/'}"
+    links = json.loads(svc["extra_links"]) if svc.get("extra_links") else []
+    out["extra_links"] = (
+        [
+            {"label": link["label"], "url": f"http://{SERVICE_HOST}:{svc['port']}{link['url_path']}"}
+            for link in links
+        ]
+        if svc.get("port") is not None
+        else []
+    )
     out["has_docs"] = bool(svc.get("docs_path") or svc.get("docs_md"))
     out["has_logs"] = has_logs(svc)
     return out
@@ -207,7 +236,9 @@ def create_service(body: ServiceIn):
                 f"Port {body.port} är redan registrerad av tjänsten '{existing['name']}'.",
             )
     try:
-        svc = db.create_service(body.model_dump())
+        data = body.model_dump()
+        data["extra_links"] = _links_json(data["extra_links"]) if data["extra_links"] else None
+        svc = db.create_service(data)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Namn eller port är redan registrerat.")
     write_ledger()
@@ -219,6 +250,8 @@ def update_service(name: str, body: ServicePatch):
     if db.get_service(name) is None:
         raise HTTPException(404, f"Ingen tjänst med namnet '{name}' är registrerad.")
     fields = body.model_dump(exclude_unset=True)
+    if "extra_links" in fields:
+        fields["extra_links"] = _links_json(fields["extra_links"] or None)
     if "kind" in fields and fields["kind"] is None:
         raise HTTPException(400, "Tjänsttyp får inte vara null.")
     if "port" in fields and fields["port"] is not None:

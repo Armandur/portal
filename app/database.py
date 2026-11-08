@@ -120,6 +120,8 @@ def init_db() -> None:
         _ensure_column(conn, "services", "autostart", "INTEGER DEFAULT 0")
         _ensure_column(conn, "services", "log_path", "TEXT")
         _ensure_column(conn, "services", "backlog_project", "TEXT")
+        # JSON-lista med extra länkar [{label, url_path}] på tjänstens egen port
+        _ensure_column(conn, "services", "extra_links", "TEXT")
         _ensure_column(conn, "ollama_endpoints", "stopgap", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "ollama_endpoints", "claimed_by", "TEXT")
         _ensure_column(conn, "ollama_endpoints", "claimed_until", "TEXT")
@@ -181,8 +183,8 @@ def create_service(data: dict) -> dict:
             """INSERT INTO services
                (name, project, port, pid, description, url_path, docs_path,
                 docs_md, started_by, kind, unit, autostart, log_path,
-                backlog_project, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                backlog_project, extra_links, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["name"], data["project"], data.get("port"), data.get("pid"),
                 data.get("description"), data.get("url_path") or "/",
@@ -190,7 +192,7 @@ def create_service(data: dict) -> dict:
                 data.get("started_by"), data.get("kind") or "ephemeral",
                 data.get("unit"), int(bool(data.get("autostart"))),
                 data.get("log_path"), data.get("backlog_project"),
-                data.get("created_at") or ts, ts,
+                data.get("extra_links"), data.get("created_at") or ts, ts,
             ),
         )
         # En reservation på porten förbrukas när tjänsten registreras
@@ -206,7 +208,7 @@ def update_service(name: str, fields: dict) -> dict | None:
     """Uppdaterar angivna fält. Returnerar tjänsten eller None om den saknas."""
     allowed = {"project", "port", "pid", "description", "url_path",
                "docs_path", "docs_md", "started_by", "kind", "unit",
-               "autostart", "log_path", "backlog_project"}
+               "autostart", "log_path", "backlog_project", "extra_links"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_service(name)
